@@ -1,6 +1,4 @@
-package lexer
-
-import "github.com/hungtcs/monkey-lang/token"
+package syntax
 
 type Lexer struct {
 	input        string
@@ -12,67 +10,67 @@ type Lexer struct {
 // 它首先检查了当前正在查看的字符l.ch，根据具体的字符来返回对应的词法单元。
 // 在返回词法单元之前，位于所输入字符串中的指针会前移，所以之后再次调用NextToken()时，l.ch字段就已经更新过了。
 // 最后，名为newToken的小型函数可以帮助初始化这些词法单元。
-func (l *Lexer) NextToken() token.Token {
+func (l *Lexer) NextToken() Token {
 	l.skipWhitespace()
 
-	var tok token.Token
+	var tok Token
 	switch l.ch {
 	case '=':
 		switch l.peekChar() {
 		case '=':
 			ch := l.ch
 			l.readChar()
-			tok = token.Token{Type: token.EQ, Literal: string(ch) + string(l.ch)}
+			tok = Token{Type: EQ, Literal: string(ch) + string(l.ch)}
 		default:
-			tok = newToken(token.ASSIGN, l.ch)
+			tok = newToken(ASSIGN, l.ch)
 		}
 	case '+':
-		tok = newToken(token.PLUS, l.ch)
+		tok = newToken(PLUS, l.ch)
 	case '-':
-		tok = newToken(token.MINUS, l.ch)
+		tok = newToken(MINUS, l.ch)
 	case '*':
-		tok = newToken(token.ASTERISK, l.ch)
+		tok = newToken(ASTERISK, l.ch)
 	case '/':
-		tok = newToken(token.SLASH, l.ch)
+		tok = newToken(SLASH, l.ch)
 	case '!':
 		switch l.peekChar() {
 		case '=':
 			ch := l.ch
 			l.readChar()
-			tok = token.Token{Type: token.NE, Literal: string(ch) + string(l.ch)}
+			tok = Token{Type: NE, Literal: string(ch) + string(l.ch)}
 		default:
-			tok = newToken(token.BANG, l.ch)
+			tok = newToken(BANG, l.ch)
 		}
 	case '<':
-		tok = newToken(token.LT, l.ch)
+		tok = newToken(LT, l.ch)
 	case '>':
-		tok = newToken(token.GT, l.ch)
+		tok = newToken(GT, l.ch)
 	case ',':
-		tok = newToken(token.COMMA, l.ch)
+		tok = newToken(COMMA, l.ch)
 	case ';':
-		tok = newToken(token.SEMICOLON, l.ch)
+		tok = newToken(SEMICOLON, l.ch)
 	case '(':
-		tok = newToken(token.LPAREN, l.ch)
+		tok = newToken(LPAREN, l.ch)
 	case ')':
-		tok = newToken(token.RPAREN, l.ch)
+		tok = newToken(RPAREN, l.ch)
 	case '{':
-		tok = newToken(token.LBRACE, l.ch)
+		tok = newToken(LBRACE, l.ch)
 	case '}':
-		tok = newToken(token.RBRACE, l.ch)
+		tok = newToken(RBRACE, l.ch)
 	case 0:
 		tok.Literal = ""
-		tok.Type = token.EOF
+		tok.Type = EOF
 	default:
 		if isLetter(l.ch) {
 			tok.Literal = l.readIdentifier()
-			tok.Type = token.LookupIdent(tok.Literal)
+			tok.Type = LookupIdent(tok.Literal)
 			return tok
 		} else if isDigit(l.ch) {
 			tok.Literal = l.readNumber()
-			tok.Type = token.INT
+			tok.Type = INT
 			return tok
 		} else {
-			tok = newToken(token.ILLEGAL, l.ch)
+			tok = newToken(ILLEGAL, l.ch)
 		}
 	}
 	l.readChar()
@@ -132,14 +130,14 @@ func (l *Lexer) skipWhitespace() {
 	}
 }
 
-func New(input string) *Lexer {
+func NewLexer(input string) *Lexer {
 	l := &Lexer{input: input}
 	l.readChar()
 	return l
 }
 
-func newToken(t token.TokenType, ch byte) token.Token {
-	return token.Token{
+func newToken(t TokenType, ch byte) Token {
+	return Token{
 		Type:    t,
 		Literal: string(ch),
 	}
