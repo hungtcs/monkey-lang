@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/hungtcs/monkey-lang/monkey"
 	"github.com/hungtcs/monkey-lang/syntax"
 )
 
 const PROMPT = ">> "
 
 func Start(in io.Reader, out io.Writer) error {
+	env := monkey.NewEnv(nil)
 	scanner := bufio.NewScanner(in)
+
 	for {
 		fmt.Fprint(out, PROMPT)
 		if !scanner.Scan() {
@@ -24,8 +27,16 @@ func Start(in io.Reader, out io.Writer) error {
 			printParseErrors(out, parser.Errors())
 			continue
 		}
-		io.WriteString(out, program.String())
-		io.WriteString(out, "\n")
+
+		value, err := monkey.Eval(program, env)
+		if err != nil {
+			io.WriteString(out, err.Error())
+			io.WriteString(out, "\n")
+		}
+		if value != nil {
+			io.WriteString(out, value.String())
+			io.WriteString(out, "\n")
+		}
 	}
 	return scanner.Err()
 }

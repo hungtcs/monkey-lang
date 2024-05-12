@@ -144,8 +144,8 @@ func (p *Parser) parseStmt() Stmt {
 	}
 }
 
-func (p *Parser) parseLetStmt() *LetStat {
-	stmt := &LetStat{
+func (p *Parser) parseLetStmt() *LetStmt {
+	stmt := &LetStmt{
 		Tok: p.curTok,
 	}
 	if !p.expectPeek(IDENT) {
@@ -236,7 +236,7 @@ func (p *Parser) parseBoolean() Expr {
 func (p *Parser) parsePrefixExpr() Expr {
 	expr := &PrefixExpr{
 		Tok: p.curTok,
-		Op:  p.curTok.Literal,
+		Op:  p.curTok.Type,
 	}
 	p.nextToken()
 	expr.Right = p.parseExpr(PREFIX)
@@ -246,7 +246,7 @@ func (p *Parser) parsePrefixExpr() Expr {
 func (p *Parser) parseInfixExpr(left Expr) Expr {
 	expr := &InfixExpr{
 		Tok:  p.curTok,
-		Op:   p.curTok.Literal,
+		Op:   p.curTok.Type,
 		Left: left,
 	}
 	precedence := p.curPrecedence()
@@ -381,6 +381,7 @@ func NewParser(input string) *Parser {
 	p.registerPrefixFn(TRUE, p.parseBoolean)
 	p.registerPrefixFn(FALSE, p.parseBoolean)
 	p.registerPrefixFn(BANG, p.parsePrefixExpr)
+	p.registerPrefixFn(PLUS, p.parsePrefixExpr)
 	p.registerPrefixFn(MINUS, p.parsePrefixExpr)
 	p.registerPrefixFn(LPAREN, p.parseGroupedExpr)
 	p.registerPrefixFn(IF, p.parseIfExpr)

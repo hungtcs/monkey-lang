@@ -62,14 +62,14 @@ func (i *Identifier) expr() {
 	panic("unimplemented")
 }
 
-type LetStat struct {
+type LetStmt struct {
 	Tok   Token
 	Name  *Identifier
 	Value Expr
 }
 
 // String implements Stmt.
-func (l *LetStat) String() string {
+func (l *LetStmt) String() string {
 	var out bytes.Buffer
 	out.WriteString(l.Tok.Literal + " ")
 	out.WriteString(l.Name.String())
@@ -82,12 +82,12 @@ func (l *LetStat) String() string {
 }
 
 // Literal implements Stat.
-func (l *LetStat) Literal() string {
+func (l *LetStmt) Literal() string {
 	return l.Tok.Literal
 }
 
 // stmt implements Stat.
-func (l *LetStat) stmt() {
+func (l *LetStmt) stmt() {
 	panic("unimplemented")
 }
 
@@ -163,7 +163,7 @@ func (i *IntegerLiteral) expr() {
 // 单目运算表达式
 type PrefixExpr struct {
 	Tok   Token
-	Op    string
+	Op    TokenType
 	Right Expr
 }
 
@@ -176,7 +176,7 @@ func (p *PrefixExpr) Literal() string {
 func (p *PrefixExpr) String() string {
 	var out bytes.Buffer
 	out.WriteString("(")
-	out.WriteString(p.Op)
+	out.WriteString(string(p.Op))
 	out.WriteString(p.Right.String())
 	out.WriteString(")")
 	return out.String()
@@ -190,7 +190,7 @@ func (p *PrefixExpr) expr() {
 type InfixExpr struct {
 	Tok   Token
 	Left  Expr
-	Op    string
+	Op    TokenType
 	Right Expr
 }
 
@@ -204,7 +204,7 @@ func (i *InfixExpr) String() string {
 	var out bytes.Buffer
 	out.WriteString("(")
 	out.WriteString(i.Left.String())
-	out.WriteString(" " + i.Op + " ")
+	out.WriteString(" " + string(i.Op) + " ")
 	out.WriteString(i.Right.String())
 	out.WriteString(")")
 	return out.String()
@@ -356,7 +356,7 @@ func (c *CallExpr) expr() {
 var (
 	_ Node = (*Program)(nil)
 	_ Expr = (*Identifier)(nil)
-	_ Stmt = (*LetStat)(nil)
+	_ Stmt = (*LetStmt)(nil)
 	_ Stmt = (*ReturnStmt)(nil)
 	_ Stmt = (*ExprStmt)(nil)
 	_ Expr = (*IntegerLiteral)(nil)

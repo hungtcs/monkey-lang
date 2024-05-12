@@ -31,7 +31,7 @@ func TestLetStats(t *testing.T) {
 			return
 		}
 
-		val := stmt.(*LetStat).Value
+		val := stmt.(*LetStmt).Value
 		if !testLiteralExpr(t, val, tt.expectedValue) {
 			return
 		}
@@ -44,7 +44,7 @@ func testLetStat(t *testing.T, s Stmt, name string) bool {
 		return false
 	}
 
-	letStmt, ok := s.(*LetStat)
+	letStmt, ok := s.(*LetStmt)
 	if !ok {
 		t.Errorf("s not *ast.LetStatement. got=%T", s)
 		return false

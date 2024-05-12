@@ -18,7 +18,9 @@ const (
 	SLASH    TokenType = "/"
 	BANG     TokenType = "!"
 	LT       TokenType = "<"
+	LE       TokenType = "<="
 	GT       TokenType = ">"
+	GE       TokenType = ">="
 	EQ       TokenType = "=="
 	NE       TokenType = "!="
 
