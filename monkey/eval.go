@@ -21,6 +21,9 @@ func Eval(node syntax.Node, env *Env) (_ Value, err error) {
 	case *syntax.Boolean:
 		return Bool(node.Value), nil
 
+	case *syntax.StringLiteral:
+		return String(node.Value), nil
+
 	case *syntax.PrefixExpr:
 		right, err := Eval(node.Right, env)
 		if err != nil {
@@ -79,19 +82,18 @@ func Eval(node syntax.Node, env *Env) (_ Value, err error) {
 		if val, ok := env.Get(node.Value); ok {
 			return val, nil
 		}
+		if val, ok := Universe[node.Value]; ok {
+			return val, nil
+		}
 		return nil, fmt.Errorf("identifier not found: %s", node.Value)
 
 	case *syntax.FunctionLiteral:
 		return &Function{Params: node.Params, Body: node.Body, Env: env}, nil
 
 	case *syntax.CallExpr:
-		var function *Function
-		if val, err := Eval(node.Function, env); err != nil {
+		function, err := Eval(node.Function, env)
+		if err != nil {
 			return nil, err
-		} else if v, ok := val.(*Function); !ok {
-			return nil, fmt.Errorf("not a function: %s", node.Function)
-		} else {
-			function = v
 		}
 
 		// 对参数求值
@@ -100,21 +102,8 @@ func Eval(node syntax.Node, env *Env) (_ Value, err error) {
 			return nil, err
 		}
 
-		// 扩展函数 env
-		fnEnv := NewEnv(env)
-		for idx, param := range function.Params {
-			fnEnv.Set(param.Value, args[idx])
-		}
-		// 执行函数体
-		value, err := evalBlockStmt(function.Body, fnEnv)
-		if err != nil {
-			return nil, err
-		}
-		// 对返回值解包
-		if rv, ok := value.(*returnValue); ok {
-			return rv.Value, nil
-		}
-		return value, nil
+		// 函数调用
+		return Call(function, args...)
 
 	}
 	return Null, nil
@@ -179,7 +168,14 @@ func Unary(op syntax.TokenType, x Value) (_ Value, err error) {
 
 func Binary(op syntax.TokenType, x, y Value) (_ Value, err error) {
 	if x, ok := x.(HasBinary); ok {
-		v, err := x.Binary(op, y)
+		v, err := x.Binary(op, y, Left)
+		if v != nil || err != nil {
+			return v, err
+		}
+	}
+
+	if y, ok := y.(HasBinary); ok {
+		v, err := y.Binary(op, x, Right)
 		if v != nil || err != nil {
 			return v, err
 		}
@@ -201,4 +197,30 @@ func Compare(op syntax.TokenType, x, y Value) (_ Value, err error) {
 		}
 	}
 	return nil, fmt.Errorf("invalid cmp operator: %s %s %s", x, syntax.EQ, y)
+}
+
+func Call(value Value, args ...Value) (_ Value, err error) {
+	switch value := value.(type) {
+	case *Function:
+		// 扩展函数 env
+		fnEnv := NewEnv(value.Env)
+		for idx, param := range value.Params {
+			fnEnv.Set(param.Value, args[idx])
+		}
+		// 执行函数体
+		result, err := evalBlockStmt(value.Body, fnEnv)
+		if err != nil {
+			return nil, err
+		}
+		// 对返回值解包
+		if rv, ok := result.(*returnValue); ok {
+			return rv.Value, nil
+		}
+		return value, nil
+
+	case *BuiltinFunction:
+		return value.CallInternal(args...)
+
+	}
+	return nil, fmt.Errorf("invalid call of non-function (%s)", value.Type())
 }

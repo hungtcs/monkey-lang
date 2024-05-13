@@ -8,10 +8,22 @@ import (
 	"github.com/hungtcs/monkey-lang/syntax"
 )
 
+type Side bool
+
+const (
+	Left  Side = false
+	Right Side = true
+)
+
 type Value interface {
 	fmt.Stringer
 	Type() string
 	Truth() bool
+}
+
+type Indexable interface {
+	Value
+	Len() int
 }
 
 type HasUnary interface {
@@ -21,7 +33,7 @@ type HasUnary interface {
 
 type HasBinary interface {
 	Value
-	Binary(op syntax.TokenType, y Value) (_ Value, err error)
+	Binary(op syntax.TokenType, y Value, side Side) (_ Value, err error)
 }
 
 type Comparable interface {
@@ -33,6 +45,12 @@ type Comparable interface {
 type TotallyOrdered interface {
 	Value
 	Cmp(y Value) (_ int, err error)
+}
+
+type Callable interface {
+	Value
+	Name() string
+	CallInternal(args ...Value) (_ Value, err error)
 }
 
 type NullType int
@@ -71,10 +89,10 @@ func (i Int) Cmp(y Value) (_ int, err error) {
 }
 
 // Binary implements HasBinary.
-func (i Int) Binary(op syntax.TokenType, y Value) (_ Value, err error) {
+func (i Int) Binary(op syntax.TokenType, y Value, side Side) (_ Value, err error) {
 	var yv Int
 	if y, ok := y.(Int); !ok {
-		return nil, fmt.Errorf("invalid binary operator: %s %s %s", i, op, y)
+		return nil, nil
 	} else {
 		yv = y
 	}
@@ -152,6 +170,40 @@ func (b Bool) Type() string {
 	return "bool"
 }
 
+type String string
+
+// Len implements Indexable.
+func (s String) Len() int {
+	return len(s)
+}
+
+// Binary implements HasBinary.
+func (s String) Binary(op syntax.TokenType, y Value, side Side) (_ Value, err error) {
+	switch op {
+	case syntax.PLUS:
+		switch y := y.(type) {
+		case String:
+			return s + y, nil
+		}
+	}
+	return nil, nil
+}
+
+// String implements Value.
+func (s String) String() string {
+	return string(s)
+}
+
+// Truth implements Value.
+func (s String) Truth() bool {
+	return len(s) > 0
+}
+
+// Type implements Value.
+func (s String) Type() string {
+	return "string"
+}
+
 type returnValue struct {
 	Value Value
 }
@@ -201,6 +253,40 @@ func (f *Function) Type() string {
 	return "function"
 }
 
+type BuiltinFunction struct {
+	name string
+	fn   func(args ...Value) (Value, error)
+}
+
+// CallInternal implements Callable.
+func (b *BuiltinFunction) CallInternal(args ...Value) (_ Value, err error) {
+	return b.fn(args...)
+}
+
+// Name implements Callable.
+func (b *BuiltinFunction) Name() string {
+	return b.name
+}
+
+// String implements Value.
+func (b *BuiltinFunction) String() string {
+	return fmt.Sprintf("<built-in function %s>", b.Name())
+}
+
+// Truth implements Value.
+func (b *BuiltinFunction) Truth() bool {
+	return true
+}
+
+// Type implements Value.
+func (b *BuiltinFunction) Type() string {
+	return "builtin_function"
+}
+
+func NewBuiltinFunction(name string, fn func(args ...Value) (Value, error)) *BuiltinFunction {
+	return &BuiltinFunction{name, fn}
+}
+
 var (
 	_ Value          = NullType(0)
 	_ Value          = Int(0)
@@ -209,6 +295,11 @@ var (
 	_ TotallyOrdered = Int(0)
 	_ Value          = Bool(false)
 	_ Comparable     = Bool(false)
+	_ Value          = String("")
+	_ Indexable      = String("")
+	_ HasBinary      = String("")
 	_ Value          = (*returnValue)(nil)
 	_ Value          = (*Function)(nil)
+	_ Value          = (*BuiltinFunction)(nil)
+	_ Callable       = (*BuiltinFunction)(nil)
 )

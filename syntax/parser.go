@@ -229,6 +229,10 @@ func (p *Parser) parseIntegerLiteral() Expr {
 	return expr
 }
 
+func (p *Parser) parseStringLiteral() Expr {
+	return &StringLiteral{Tok: p.curTok, Value: p.curTok.Literal}
+}
+
 func (p *Parser) parseBoolean() Expr {
 	return &Boolean{Tok: p.curTok, Value: p.curTokenIs(TRUE)}
 }
@@ -386,6 +390,7 @@ func NewParser(input string) *Parser {
 	p.registerPrefixFn(LPAREN, p.parseGroupedExpr)
 	p.registerPrefixFn(IF, p.parseIfExpr)
 	p.registerPrefixFn(FUNCTION, p.parseFunctionLiteral)
+	p.registerPrefixFn(STRING, p.parseStringLiteral)
 
 	// 注册中缀解析函数
 	p.registerInfixFn(PLUS, p.parseInfixExpr)

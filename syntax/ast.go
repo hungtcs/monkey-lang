@@ -160,6 +160,26 @@ func (i *IntegerLiteral) expr() {
 	panic("unimplemented")
 }
 
+type StringLiteral struct {
+	Tok   Token
+	Value string
+}
+
+// Literal implements Expr.
+func (s *StringLiteral) Literal() string {
+	return s.Tok.Literal
+}
+
+// String implements Expr.
+func (s *StringLiteral) String() string {
+	return s.Tok.Literal
+}
+
+// expr implements Expr.
+func (s *StringLiteral) expr() {
+	panic("unimplemented")
+}
+
 // 单目运算表达式
 type PrefixExpr struct {
 	Tok   Token
@@ -360,6 +380,7 @@ var (
 	_ Stmt = (*ReturnStmt)(nil)
 	_ Stmt = (*ExprStmt)(nil)
 	_ Expr = (*IntegerLiteral)(nil)
+	_ Expr = (*StringLiteral)(nil)
 	_ Expr = (*PrefixExpr)(nil)
 	_ Expr = (*InfixExpr)(nil)
 	_ Expr = (*Boolean)(nil)
