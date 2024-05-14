@@ -373,6 +373,61 @@ func (c *CallExpr) expr() {
 	panic("unimplemented")
 }
 
+type ArrayLiteral struct {
+	Tok   Token
+	Items []Expr
+}
+
+// Literal implements Expr.
+func (a *ArrayLiteral) Literal() string {
+	return a.Tok.Literal
+}
+
+// String implements Expr.
+func (a *ArrayLiteral) String() string {
+	var items = make([]string, len(a.Items))
+	for _, item := range a.Items {
+		items = append(items, item.String())
+	}
+	var out bytes.Buffer
+	out.WriteString(a.Tok.Literal)
+	out.WriteString("[")
+	out.WriteString(strings.Join(items, ", "))
+	out.WriteString("]")
+	return out.String()
+}
+
+// expr implements Expr.
+func (a *ArrayLiteral) expr() {
+	panic("unimplemented")
+}
+
+type IndexExpr struct {
+	Tok   Token
+	Left  Expr
+	Index Expr
+}
+
+// Literal implements Expr.
+func (i *IndexExpr) Literal() string {
+	return i.Tok.Literal
+}
+
+// String implements Expr.
+func (i *IndexExpr) String() string {
+	var out bytes.Buffer
+	out.WriteString(i.Left.String())
+	out.WriteString("[")
+	out.WriteString(i.Index.String())
+	out.WriteString("]")
+	return out.String()
+}
+
+// expr implements Expr.
+func (i *IndexExpr) expr() {
+	panic("unimplemented")
+}
+
 var (
 	_ Node = (*Program)(nil)
 	_ Expr = (*Identifier)(nil)
@@ -388,4 +443,6 @@ var (
 	_ Expr = (*IfExpr)(nil)
 	_ Expr = (*FunctionLiteral)(nil)
 	_ Expr = (*CallExpr)(nil)
+	_ Expr = (*ArrayLiteral)(nil)
+	_ Expr = (*IndexExpr)(nil)
 )

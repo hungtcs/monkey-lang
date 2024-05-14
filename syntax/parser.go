@@ -15,6 +15,7 @@ const (
 	PRODUCT      // *
 	PREFIX       // -X or !X
 	CALL         // myFunction(X)
+	INDEX        // a[i]
 )
 
 // 运算符对应的优先级
@@ -28,6 +29,7 @@ var precedence = map[TokenType]int{
 	SLASH:    PRODUCT,
 	ASTERISK: PRODUCT,
 	LPAREN:   CALL,
+	LBRACKET: INDEX,
 }
 
 // 用于实现普拉特语法分析器
@@ -268,6 +270,31 @@ func (p *Parser) parseGroupedExpr() Expr {
 	return exp
 }
 
+func (p *Parser) parseArrayLiteral() Expr {
+	expr := &ArrayLiteral{Tok: p.curTok}
+	expr.Items = p.parseExprList(RBRACKET)
+	return expr
+}
+
+func (p *Parser) parseExprList(end TokenType) []Expr {
+	exprs := make([]Expr, 0)
+	if p.peekTokenIs(end) {
+		p.nextToken()
+		return exprs
+	}
+	p.nextToken()                              // 消耗掉开始括号
+	exprs = append(exprs, p.parseExpr(LOWEST)) // 解析第一个参数
+	for p.peekTokenIs(COMMA) {
+		p.nextToken()
+		p.nextToken()
+		exprs = append(exprs, p.parseExpr(LOWEST))
+	}
+	if !p.expectPeek(end) {
+		return nil
+	}
+	return exprs
+}
+
 func (p *Parser) parseBlockStmt() *BlockStmt {
 	block := &BlockStmt{Tok: p.curTok}
 	block.Stmts = make([]Stmt, 0)
@@ -345,30 +372,40 @@ func (p *Parser) parseFunctionLiteral() Expr {
 	return expr
 }
 
-func (p *Parser) parseCallArgs() []Expr {
-	args := make([]Expr, 0)
-	// 如果是右括号，直接返回
-	if p.peekTokenIs(RPAREN) {
-		p.nextToken()
-		return args
-	}
-	p.nextToken() // 消耗左括号
-	args = append(args, p.parseExpr(LOWEST))
-	// 如果是逗号，继续解析
-	for p.peekTokenIs(COMMA) {
-		p.nextToken()
-		p.nextToken()
-		args = append(args, p.parseExpr(LOWEST))
-	}
-	if !p.expectPeek(RPAREN) {
-		return nil
-	}
-	return args
-}
+// func (p *Parser) parseCallArgs() []Expr {
+// 	args := make([]Expr, 0)
+// 	// 如果是右括号，直接返回
+// 	if p.peekTokenIs(RPAREN) {
+// 		p.nextToken()
+// 		return args
+// 	}
+// 	p.nextToken() // 消耗左括号
+// 	args = append(args, p.parseExpr(LOWEST))
+// 	// 如果是逗号，继续解析
+// 	for p.peekTokenIs(COMMA) {
+// 		p.nextToken()
+// 		p.nextToken()
+// 		args = append(args, p.parseExpr(LOWEST))
+// 	}
+// 	if !p.expectPeek(RPAREN) {
+// 		return nil
+// 	}
+// 	return args
+// }
 
 func (p *Parser) parseCallExpr(function Expr) Expr {
 	expr := &CallExpr{Tok: p.curTok, Function: function}
-	expr.Args = p.parseCallArgs()
+	expr.Args = p.parseExprList(RPAREN)
+	return expr
+}
+
+func (p *Parser) parseIndexExpr(left Expr) Expr {
+	expr := &IndexExpr{Tok: p.curTok, Left: left}
+	p.nextToken() // 消耗左边方括号
+	expr.Index = p.parseExpr(LOWEST)
+	if !p.expectPeek(RBRACKET) {
+		return nil
+	}
 	return expr
 }
 
@@ -388,6 +425,7 @@ func NewParser(input string) *Parser {
 	p.registerPrefixFn(PLUS, p.parsePrefixExpr)
 	p.registerPrefixFn(MINUS, p.parsePrefixExpr)
 	p.registerPrefixFn(LPAREN, p.parseGroupedExpr)
+	p.registerPrefixFn(LBRACKET, p.parseArrayLiteral)
 	p.registerPrefixFn(IF, p.parseIfExpr)
 	p.registerPrefixFn(FUNCTION, p.parseFunctionLiteral)
 	p.registerPrefixFn(STRING, p.parseStringLiteral)
@@ -402,6 +440,7 @@ func NewParser(input string) *Parser {
 	p.registerInfixFn(LT, p.parseInfixExpr)
 	p.registerInfixFn(GT, p.parseInfixExpr)
 	p.registerInfixFn(LPAREN, p.parseCallExpr)
+	p.registerInfixFn(LBRACKET, p.parseIndexExpr)
 
 	// read twice to set curTok and peekTok
 	p.nextToken()

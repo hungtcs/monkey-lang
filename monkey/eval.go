@@ -24,6 +24,24 @@ func Eval(node syntax.Node, env *Env) (_ Value, err error) {
 	case *syntax.StringLiteral:
 		return String(node.Value), nil
 
+	case *syntax.ArrayLiteral:
+		items, err := evalExprs(node.Items, env)
+		if err != nil {
+			return nil, err
+		}
+		return &Array{items: items}, nil
+
+	case *syntax.IndexExpr:
+		left, err := Eval(node.Left, env)
+		if err != nil {
+			return nil, err
+		}
+		index, err := Eval(node.Index, env)
+		if err != nil {
+			return nil, err
+		}
+		return parseIndexExpr(left, index)
+
 	case *syntax.PrefixExpr:
 		right, err := Eval(node.Right, env)
 		if err != nil {
@@ -149,6 +167,22 @@ func evalExprs(exprs []syntax.Expr, env *Env) (_ []Value, err error) {
 		}
 	}
 	return values, nil
+}
+
+func parseIndexExpr(left, index Value) (_ Value, err error) {
+	switch left := left.(type) {
+	case Indexable:
+		if iv, ok := index.(Int); !ok {
+			return nil, fmt.Errorf("invalid index type: %s", index.Type())
+		} else {
+			// 支持负数索引
+			if iv < 0 {
+				iv = Int(left.Len()) + (iv)
+			}
+			return left.Index(int(iv)), nil
+		}
+	}
+	return nil, fmt.Errorf("index operator not supported: %s", left.Type())
 }
 
 func Unary(op syntax.TokenType, x Value) (_ Value, err error) {

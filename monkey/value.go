@@ -24,6 +24,7 @@ type Value interface {
 type Indexable interface {
 	Value
 	Len() int
+	Index(i int) Value
 }
 
 type HasUnary interface {
@@ -172,6 +173,11 @@ func (b Bool) Type() string {
 
 type String string
 
+// Index implements Indexable.
+func (s String) Index(i int) Value {
+	return s[i : i+1]
+}
+
 // Len implements Indexable.
 func (s String) Len() int {
 	return len(s)
@@ -202,6 +208,44 @@ func (s String) Truth() bool {
 // Type implements Value.
 func (s String) Type() string {
 	return "string"
+}
+
+type Array struct {
+	items []Value
+}
+
+// Index implements Indexable.
+func (a *Array) Index(i int) Value {
+	return a.items[i]
+}
+
+// Len implements Indexable.
+func (a *Array) Len() int {
+	return len(a.items)
+}
+
+// String implements Value.
+func (a *Array) String() string {
+	var out bytes.Buffer
+	out.WriteString("[")
+	for i, item := range a.items {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(item.String())
+	}
+	out.WriteString("]")
+	return out.String()
+}
+
+// Truth implements Value.
+func (a *Array) Truth() bool {
+	return true
+}
+
+// Type implements Value.
+func (a *Array) Type() string {
+	return "array"
 }
 
 type returnValue struct {
@@ -298,6 +342,8 @@ var (
 	_ Value          = String("")
 	_ Indexable      = String("")
 	_ HasBinary      = String("")
+	_ Value          = (*Array)(nil)
+	_ Indexable      = (*Array)(nil)
 	_ Value          = (*returnValue)(nil)
 	_ Value          = (*Function)(nil)
 	_ Value          = (*BuiltinFunction)(nil)
