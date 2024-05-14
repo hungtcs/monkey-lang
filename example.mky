@@ -3,3 +3,10 @@ let add = fn(a, b) {
 }
 
 add(1, add(2, 3))
+
+let map = { "a": 1, "b": 2, true: 3, false: 4 }
+print(map)
+print("a:", map["a"])
+print("b:", map["b"])
+print("true:", map[true])
+print("false:", map[false])

@@ -15,4 +15,12 @@ var Universe = map[string]*BuiltinFunction{
 			return nil, fmt.Errorf("argument to `len` not supported, got %s", arg0.Type())
 		}
 	}),
+	"print": NewBuiltinFunction("print", func(args ...Value) (Value, error) {
+		str := make([]any, len(args))
+		for i, arg := range args {
+			str[i] = arg.String()
+		}
+		fmt.Println(str...)
+		return Null, nil
+	}),
 }
