@@ -25,6 +25,7 @@ const (
 	EQ       TokenType = "=="
 	NE       TokenType = "!="
 
+	COLON     TokenType = ":"
 	COMMA     TokenType = ","
 	SEMICOLON TokenType = ";"
 

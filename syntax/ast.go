@@ -402,6 +402,36 @@ func (a *ArrayLiteral) expr() {
 	panic("unimplemented")
 }
 
+type MapLiteral struct {
+	Tok   Token
+	Pairs map[Expr]Expr
+}
+
+// Literal implements Expr.
+func (m *MapLiteral) Literal() string {
+	return m.Tok.Literal
+}
+
+// String implements Expr.
+func (m *MapLiteral) String() string {
+	var out bytes.Buffer
+	out.WriteString(m.Tok.Literal)
+	out.WriteString("{")
+	for k, v := range m.Pairs {
+		out.WriteString(k.String())
+		out.WriteString(":")
+		out.WriteString(v.String())
+		out.WriteString(",")
+	}
+	out.WriteString("}")
+	return out.String()
+}
+
+// expr implements Expr.
+func (m *MapLiteral) expr() {
+	panic("unimplemented")
+}
+
 type IndexExpr struct {
 	Tok   Token
 	Left  Expr
@@ -444,5 +474,6 @@ var (
 	_ Expr = (*FunctionLiteral)(nil)
 	_ Expr = (*CallExpr)(nil)
 	_ Expr = (*ArrayLiteral)(nil)
+	_ Expr = (*MapLiteral)(nil)
 	_ Expr = (*IndexExpr)(nil)
 )

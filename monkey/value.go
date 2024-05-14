@@ -3,6 +3,8 @@ package monkey
 import (
 	"bytes"
 	"fmt"
+	"hash/maphash"
+	"math/big"
 	"strings"
 
 	"github.com/hungtcs/monkey-lang/syntax"
@@ -18,7 +20,13 @@ const (
 type Value interface {
 	fmt.Stringer
 	Type() string
+	Hash() (uint32, error)
 	Truth() bool
+}
+
+type Mapping interface {
+	Value
+	Get(v Value) (_ Value, _ bool, err error)
 }
 
 type Indexable interface {
@@ -56,6 +64,11 @@ type Callable interface {
 
 type NullType int
 
+// Hash implements Value.
+func (n NullType) Hash() (uint32, error) {
+	return 0, nil
+}
+
 // String implements Value.
 func (n NullType) String() string {
 	return "null"
@@ -74,6 +87,12 @@ func (n NullType) Type() string {
 const Null NullType = 0
 
 type Int int64
+
+// Hash implements Value.
+func (i Int) Hash() (uint32, error) {
+	lo := big.Word(i)
+	return 12582917 * uint32(lo+3), nil
+}
 
 // Cmp implements TotallyOrdered.
 func (i Int) Cmp(y Value) (_ int, err error) {
@@ -141,6 +160,11 @@ func (i Int) Type() string {
 
 type Bool bool
 
+// Hash implements Value.
+func (b Bool) Hash() (uint32, error) {
+	return uint32(b2i(bool(b))), nil
+}
+
 // Compare implements Comparable.
 func (b Bool) Compare(op syntax.TokenType, y_ Value) (_ Value, err error) {
 	y, ok := y_.(Bool)
@@ -172,6 +196,29 @@ func (b Bool) Type() string {
 }
 
 type String string
+
+var seed = maphash.MakeSeed()
+
+// Hash implements Value.
+func (s String) Hash() (uint32, error) {
+	if len(s) >= 12 {
+		// Call the Go runtime's optimized hash implementation,
+		// which uses the AES instructions on amd64 and arm64 machines.
+		h := maphash.String(seed, string(s))
+		return uint32(h>>32) | uint32(h), nil
+	}
+	return softHashString(string(s)), nil
+}
+
+// softHashString computes the 32-bit FNV-1a hash of s in software.
+func softHashString(s string) uint32 {
+	var h uint32 = 2166136261
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= 16777619
+	}
+	return h
+}
 
 // Index implements Indexable.
 func (s String) Index(i int) Value {
@@ -214,6 +261,11 @@ type Array struct {
 	items []Value
 }
 
+// Hash implements Value.
+func (a *Array) Hash() (uint32, error) {
+	return 0, fmt.Errorf("unhashable type: array")
+}
+
 // Index implements Indexable.
 func (a *Array) Index(i int) Value {
 	return a.items[i]
@@ -248,8 +300,64 @@ func (a *Array) Type() string {
 	return "array"
 }
 
+type MapEntry struct {
+	Key   Value
+	Value Value
+}
+
+type Map struct {
+	entries map[uint32]MapEntry
+}
+
+// Get implements Mapping.
+func (m *Map) Get(v Value) (_ Value, _ bool, err error) {
+	hash, err := v.Hash()
+	if err != nil {
+		return nil, false, err
+	}
+	val, ok := m.entries[hash]
+	if ok {
+		return val.Value, true, nil
+	}
+	return Null, false, nil
+}
+
+// Hash implements Value.
+func (m *Map) Hash() (uint32, error) {
+	return 0, fmt.Errorf("unhashable type: map")
+}
+
+// String implements Value.
+func (m *Map) String() string {
+	var entries = make([]string, 0)
+	for _, item := range m.entries {
+		entries = append(entries, fmt.Sprintf("%s: %s", item.Key.String(), item.Value.String()))
+	}
+
+	var out bytes.Buffer
+	out.WriteString("{")
+	out.WriteString(strings.Join(entries, ", "))
+	out.WriteString("}")
+	return out.String()
+}
+
+// Truth implements Value.
+func (m *Map) Truth() bool {
+	return true
+}
+
+// Type implements Value.
+func (m *Map) Type() string {
+	return "map"
+}
+
 type returnValue struct {
 	Value Value
+}
+
+// Hash implements Value.
+func (r *returnValue) Hash() (uint32, error) {
+	panic("unimplemented")
 }
 
 // String implements Value.
@@ -271,6 +379,11 @@ type Function struct {
 	Params []*syntax.Identifier
 	Body   *syntax.BlockStmt
 	Env    *Env
+}
+
+// Hash implements Value.
+func (f *Function) Hash() (uint32, error) {
+	panic("unimplemented")
 }
 
 // String implements Value.
@@ -300,6 +413,11 @@ func (f *Function) Type() string {
 type BuiltinFunction struct {
 	name string
 	fn   func(args ...Value) (Value, error)
+}
+
+// Hash implements Value.
+func (b *BuiltinFunction) Hash() (uint32, error) {
+	panic("unimplemented")
 }
 
 // CallInternal implements Callable.
@@ -344,6 +462,8 @@ var (
 	_ HasBinary      = String("")
 	_ Value          = (*Array)(nil)
 	_ Indexable      = (*Array)(nil)
+	_ Value          = (*Map)(nil)
+	_ Mapping        = (*Map)(nil)
 	_ Value          = (*returnValue)(nil)
 	_ Value          = (*Function)(nil)
 	_ Value          = (*BuiltinFunction)(nil)

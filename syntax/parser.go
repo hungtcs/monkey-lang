@@ -276,6 +276,34 @@ func (p *Parser) parseArrayLiteral() Expr {
 	return expr
 }
 
+func (p *Parser) parseMapLiteral() Expr {
+	expr := &MapLiteral{Tok: p.curTok}
+	expr.Pairs = make(map[Expr]Expr)
+
+	// 检测到右括号，结束循环
+	for !p.peekTokenIs(RBRACE) {
+		p.nextToken()              // 消耗右括号
+		key := p.parseExpr(LOWEST) // 解析 Key
+		if !p.expectPeek(COLON) {  // 解析冒号
+			return nil
+		}
+		p.nextToken()              // 读取冒号后的下一个字符
+		val := p.parseExpr(LOWEST) // 解析 Value
+		expr.Pairs[key] = val
+
+		// 如果下一个字符不是有括号，并且不是逗号，则结束循环
+		if !p.peekTokenIs(RBRACE) && !p.expectPeek(COMMA) {
+			return nil
+		}
+	}
+
+	if !p.expectPeek(RBRACE) {
+		return nil
+	}
+
+	return expr
+}
+
 func (p *Parser) parseExprList(end TokenType) []Expr {
 	exprs := make([]Expr, 0)
 	if p.peekTokenIs(end) {
@@ -425,6 +453,7 @@ func NewParser(input string) *Parser {
 	p.registerPrefixFn(PLUS, p.parsePrefixExpr)
 	p.registerPrefixFn(MINUS, p.parsePrefixExpr)
 	p.registerPrefixFn(LPAREN, p.parseGroupedExpr)
+	p.registerPrefixFn(LBRACE, p.parseMapLiteral)
 	p.registerPrefixFn(LBRACKET, p.parseArrayLiteral)
 	p.registerPrefixFn(IF, p.parseIfExpr)
 	p.registerPrefixFn(FUNCTION, p.parseFunctionLiteral)

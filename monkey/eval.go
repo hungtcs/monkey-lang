@@ -31,6 +31,9 @@ func Eval(node syntax.Node, env *Env) (_ Value, err error) {
 		}
 		return &Array{items: items}, nil
 
+	case *syntax.MapLiteral:
+		return evalMapLiteral(node, env)
+
 	case *syntax.IndexExpr:
 		left, err := Eval(node.Left, env)
 		if err != nil {
@@ -169,8 +172,37 @@ func evalExprs(exprs []syntax.Expr, env *Env) (_ []Value, err error) {
 	return values, nil
 }
 
+func evalMapLiteral(node *syntax.MapLiteral, env *Env) (_ Value, err error) {
+	entries := make(map[uint32]MapEntry)
+	for keyNode, valNode := range node.Pairs {
+		key, err := Eval(keyNode, env)
+		if err != nil {
+			return nil, err
+		}
+		hash, err := key.Hash()
+		if err != nil {
+			return nil, err
+		}
+		val, err := Eval(valNode, env)
+		if err != nil {
+			return nil, err
+		}
+		entries[hash] = MapEntry{Key: key, Value: val}
+	}
+	return &Map{entries: entries}, nil
+}
+
 func parseIndexExpr(left, index Value) (_ Value, err error) {
 	switch left := left.(type) {
+	case Mapping:
+		val, found, err := left.Get(index)
+		if err != nil {
+			return nil, err
+		} else if found {
+			return val, nil
+		} else {
+			return Null, nil
+		}
 	case Indexable:
 		if iv, ok := index.(Int); !ok {
 			return nil, fmt.Errorf("invalid index type: %s", index.Type())
