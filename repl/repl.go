@@ -22,9 +22,9 @@ func Start(in io.Reader, out io.Writer) error {
 		}
 		line := scanner.Text()
 		parser := syntax.NewParser(line)
-		program := parser.Parse()
-		if len(parser.Errors()) > 0 {
-			printParseErrors(out, parser.Errors())
+		program, err := parser.Parse()
+		if err != nil {
+			printParseError(out, err)
 			continue
 		}
 
@@ -41,10 +41,8 @@ func Start(in io.Reader, out io.Writer) error {
 	return scanner.Err()
 }
 
-func printParseErrors(out io.Writer, errors []string) {
+func printParseError(out io.Writer, err error) {
 	io.WriteString(out, "Woops! We ran into some monkey business here!\n")
 	io.WriteString(out, " parser errors:\n")
-	for _, msg := range errors {
-		io.WriteString(out, "\t"+msg+"\n")
-	}
+	io.WriteString(out, "\t"+err.Error()+"\n")
 }

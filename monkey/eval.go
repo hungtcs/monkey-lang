@@ -217,7 +217,7 @@ func parseIndexExpr(left, index Value) (_ Value, err error) {
 	return nil, fmt.Errorf("index operator not supported: %s", left.Type())
 }
 
-func Unary(op syntax.TokenType, x Value) (_ Value, err error) {
+func Unary(op syntax.Token, x Value) (_ Value, err error) {
 	if op == syntax.BANG {
 		return Bool(!x.Truth()), nil
 	}
@@ -232,7 +232,7 @@ func Unary(op syntax.TokenType, x Value) (_ Value, err error) {
 	return nil, fmt.Errorf("unknown unary operator: %s", op)
 }
 
-func Binary(op syntax.TokenType, x, y Value) (_ Value, err error) {
+func Binary(op syntax.Token, x, y Value) (_ Value, err error) {
 	if x, ok := x.(HasBinary); ok {
 		v, err := x.Binary(op, y, Left)
 		if v != nil || err != nil {
@@ -249,7 +249,7 @@ func Binary(op syntax.TokenType, x, y Value) (_ Value, err error) {
 	return nil, fmt.Errorf("unknown binary operator: %s %s %s", x, op, y)
 }
 
-func Compare(op syntax.TokenType, x, y Value) (_ Value, err error) {
+func Compare(op syntax.Token, x, y Value) (_ Value, err error) {
 	if isSameType(x, y) {
 		if x, ok := x.(Comparable); ok {
 			return x.Compare(op, y)

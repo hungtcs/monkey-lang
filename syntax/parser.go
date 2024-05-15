@@ -19,7 +19,7 @@ const (
 )
 
 // 运算符对应的优先级
-var precedence = map[TokenType]int{
+var precedence = map[Token]int{
 	EQ:       EQUALS,
 	NE:       EQUALS,
 	LT:       LESS_GREATER,
@@ -27,7 +27,7 @@ var precedence = map[TokenType]int{
 	PLUS:     SUM,
 	MINUS:    SUM,
 	SLASH:    PRODUCT,
-	ASTERISK: PRODUCT,
+	STAR:     PRODUCT,
 	LPAREN:   CALL,
 	LBRACKET: INDEX,
 }
@@ -39,75 +39,79 @@ type (
 )
 
 type Parser struct {
-	l      *Lexer
-	errors []string
+	l *Lexer
 
-	curTok  Token
-	peekTok Token
+	pos    Position
+	curTok TokenValue
 
-	prefixParseFns map[TokenType]prefixParseFn
-	infixParseFns  map[TokenType]infixParseFn
+	prefixParseFns map[Token]prefixParseFn
+	infixParseFns  map[Token]infixParseFn
 }
 
-func (p *Parser) registerPrefixFn(tokenType TokenType, fn prefixParseFn) {
+func (p *Parser) registerPrefixFn(tokenType Token, fn prefixParseFn) {
 	p.prefixParseFns[tokenType] = fn
 }
 
-func (p *Parser) registerInfixFn(tokenType TokenType, fn infixParseFn) {
+func (p *Parser) registerInfixFn(tokenType Token, fn infixParseFn) {
 	p.infixParseFns[tokenType] = fn
 }
 
-func (p *Parser) peekError(t TokenType) {
-	p.errors = append(
-		p.errors,
-		fmt.Sprintf(
-			`expected next token to be "%s", got "%s" instead`,
-			t, p.peekTok.Type,
-		),
-	)
+func (p *Parser) noPrefixParseFnError(t Token) {
+	panic(fmt.Errorf(
+		`no prefix parse function for "%s" found`,
+		t,
+	))
 }
 
-func (p *Parser) noPrefixParseFnError(t TokenType) {
-	p.errors = append(
-		p.errors,
-		fmt.Sprintf(
-			`no prefix parse function for "%s" found`,
-			t,
-		),
-	)
+func (p *Parser) nextToken() Position {
+	pos := p.l.pos
+	p.pos = pos
+
+	p.curTok = p.l.NextToken()
+	return pos
 }
 
-func (p *Parser) nextToken() {
-	p.curTok = p.peekTok
-	p.peekTok = p.l.NextToken()
-}
-
-func (p *Parser) curTokenIs(t TokenType) bool {
+func (p *Parser) curTokenIs(t Token) bool {
 	return p.curTok.Type == t
 }
 
-func (p *Parser) peekTokenIs(t TokenType) bool {
-	return p.peekTok.Type == t
+// 断言当前 token 是否为 t
+func (p *Parser) expect(t Token) {
+	if !p.curTokenIs(t) {
+		panic(
+			NewError(
+				p.pos,
+				fmt.Sprintf(
+					`expected next token to be "%s", got "%s" instead`,
+					t, p.curTok,
+				),
+			),
+		)
+	}
 }
 
-// peekTokenIs 检查下一个词法单元是否为 t，
-// 如果是，则前移词法单元，
-// 否则返回 false
-func (p *Parser) expectPeek(t TokenType) bool {
-	if p.peekTokenIs(t) {
-		p.nextToken()
-		return true
+// 断言当前 token 是否为 t，如果是，则前移
+func (p *Parser) consume(t Token) Position {
+	if p.curTok.Type == t {
+		return p.nextToken()
 	}
-	p.peekError(t)
-	return false
+	panic(
+		NewError(
+			p.pos,
+			fmt.Sprintf(
+				`expected next token to be "%s", got "%s" instead`,
+				t, p.curTok,
+			),
+		),
+	)
 }
 
-func (p *Parser) peekPrecedence() int {
-	if val, ok := precedence[p.peekTok.Type]; ok {
-		return val
-	}
-	return LOWEST
-}
+// func (p *Parser) peekPrecedence() int {
+// 	if val, ok := precedence[p.peekTok.Type]; ok {
+// 		return val
+// 	}
+// 	return LOWEST
+// }
 
 func (p *Parser) curPrecedence() int {
 	if val, ok := precedence[p.curTok.Type]; ok {
@@ -116,23 +120,18 @@ func (p *Parser) curPrecedence() int {
 	return LOWEST
 }
 
-func (p *Parser) Errors() []string {
-	return p.errors
-}
+func (p *Parser) Parse() (_ *Program, err error) {
+	defer p.l.recover(&err)
 
-func (p *Parser) Parse() *Program {
 	program := &Program{}
 	program.Stmts = make([]Stmt, 0)
 
 	for p.curTok.Type != EOF {
 		stmt := p.parseStmt()
-		if stmt != nil {
-			program.Stmts = append(program.Stmts, stmt)
-		}
-		p.nextToken()
+		program.Stmts = append(program.Stmts, stmt)
 	}
 
-	return program
+	return program, nil
 }
 
 func (p *Parser) parseStmt() Stmt {
@@ -147,37 +146,32 @@ func (p *Parser) parseStmt() Stmt {
 }
 
 func (p *Parser) parseLetStmt() *LetStmt {
+	pos := p.nextToken() // 消耗 let token
 	stmt := &LetStmt{
-		Tok: p.curTok,
+		Pos: pos,
 	}
-	if !p.expectPeek(IDENT) {
-		return nil
-	}
-	stmt.Name = &Identifier{Tok: p.curTok, Value: p.curTok.Literal}
 
-	if !p.expectPeek(ASSIGN) {
-		return nil
-	}
-	p.nextToken()
+	stmt.Name = &Identifier{Value: p.curTok.Literal}
+	pos = p.consume(IDENT)
+	stmt.Name.Pos = pos
 
+	p.consume(ASSIGN)
 	stmt.Value = p.parseExpr(LOWEST)
-	if p.peekTokenIs(SEMICOLON) {
+	if p.curTokenIs(SEMICOLON) {
 		p.nextToken()
 	}
-
 	return stmt
 }
 
 func (p *Parser) parseReturnStmt() *ReturnStmt {
+	pos := p.nextToken()
 	stmt := &ReturnStmt{
-		Tok: p.curTok,
+		Pos: pos,
 	}
-	// 消耗掉 return
-	p.nextToken()
 	stmt.Value = p.parseExpr(LOWEST)
 
 	// 分号是可选的
-	if p.peekTokenIs(SEMICOLON) {
+	if p.curTokenIs(SEMICOLON) {
 		p.nextToken()
 	}
 
@@ -185,12 +179,14 @@ func (p *Parser) parseReturnStmt() *ReturnStmt {
 }
 
 func (p *Parser) parseExprStmt() *ExprStmt {
-	stmt := &ExprStmt{Tok: p.curTok}
+	stmt := &ExprStmt{}
 	stmt.Expr = p.parseExpr(LOWEST)
+
 	// 分号是可选的
-	if p.peekTokenIs(SEMICOLON) {
+	if p.curTokenIs(SEMICOLON) {
 		p.nextToken()
 	}
+
 	return stmt
 }
 
@@ -203,12 +199,11 @@ func (p *Parser) parseExpr(precedence int) Expr {
 	leftExp := prefix()
 
 	// 不是分号，并且优先级小于下一个词法单元的优先级，则继续解析
-	for !p.peekTokenIs(SEMICOLON) && precedence < p.peekPrecedence() {
-		infix := p.infixParseFns[p.peekTok.Type]
+	for !p.curTokenIs(SEMICOLON) && precedence < p.curPrecedence() {
+		infix := p.infixParseFns[p.curTok.Type]
 		if infix == nil {
 			return leftExp
 		}
-		p.nextToken()
 		leftExp = infix(leftExp)
 	}
 
@@ -216,149 +211,140 @@ func (p *Parser) parseExpr(precedence int) Expr {
 }
 
 func (p *Parser) parseIdentifier() Expr {
-	return &Identifier{Tok: p.curTok, Value: p.curTok.Literal}
+	value := p.curTok.Literal
+	pos := p.nextToken()
+	return &Identifier{Pos: pos, Value: value}
 }
 
 func (p *Parser) parseIntegerLiteral() Expr {
-	expr := &IntegerLiteral{Tok: p.curTok}
-	value, err := strconv.ParseInt(p.curTok.Literal, 0, 64)
+	raw := p.curTok.Literal
+	pos := p.nextToken()
+	expr := &IntegerLiteral{Raw: raw, Pos: pos}
+	value, err := strconv.ParseInt(raw, 0, 64)
 	if err != nil {
-		msg := fmt.Sprintf("could not parse %q as integer", p.curTok.Literal)
-		p.errors = append(p.errors, msg)
-		return nil
+		panic(fmt.Errorf("could not parse %q as integer", p.curTok.Literal))
 	}
 	expr.Value = value
 	return expr
 }
 
 func (p *Parser) parseStringLiteral() Expr {
-	return &StringLiteral{Tok: p.curTok, Value: p.curTok.Literal}
+	val := p.curTok.Literal
+	pos := p.nextToken()
+	return &StringLiteral{pos: pos, Value: val}
 }
 
 func (p *Parser) parseBoolean() Expr {
-	return &Boolean{Tok: p.curTok, Value: p.curTokenIs(TRUE)}
+	raw := p.curTok.Literal
+	val := p.curTokenIs(TRUE)
+	pos := p.nextToken()
+	return &Boolean{pos: pos, raw: raw, Value: val}
 }
 
 func (p *Parser) parsePrefixExpr() Expr {
+	op := p.curTok.Type
+	pos := p.nextToken()
 	expr := &PrefixExpr{
-		Tok: p.curTok,
-		Op:  p.curTok.Type,
+		Op:  op,
+		Pos: pos,
 	}
-	p.nextToken()
 	expr.Right = p.parseExpr(PREFIX)
 	return expr
 }
 
 func (p *Parser) parseInfixExpr(left Expr) Expr {
 	expr := &InfixExpr{
-		Tok:  p.curTok,
 		Op:   p.curTok.Type,
 		Left: left,
 	}
 	precedence := p.curPrecedence()
-	p.nextToken()
+	p.nextToken() // 消耗运算符
 	expr.Right = p.parseExpr(precedence)
+
 	return expr
 }
 
 func (p *Parser) parseGroupedExpr() Expr {
-	p.nextToken()
+	p.nextToken() // 消耗左括号
 	exp := p.parseExpr(LOWEST)
-	if !p.expectPeek(RPAREN) {
-		return nil
-	}
+	p.consume(RPAREN)
 	return exp
 }
 
 func (p *Parser) parseArrayLiteral() Expr {
-	expr := &ArrayLiteral{Tok: p.curTok}
+	start := p.nextToken()
+	expr := &ArrayLiteral{start: start}
 	expr.Items = p.parseExprList(RBRACKET)
+	end := p.consume(RBRACKET)
+	expr.end = end
 	return expr
 }
 
 func (p *Parser) parseMapLiteral() Expr {
-	expr := &MapLiteral{Tok: p.curTok}
+	start := p.nextToken()
+	expr := &MapLiteral{start: start}
 	expr.Pairs = make(map[Expr]Expr)
 
 	// 检测到右括号，结束循环
-	for !p.peekTokenIs(RBRACE) {
-		p.nextToken()              // 消耗右括号
+	for !p.curTokenIs(RBRACE) {
 		key := p.parseExpr(LOWEST) // 解析 Key
-		if !p.expectPeek(COLON) {  // 解析冒号
-			return nil
-		}
-		p.nextToken()              // 读取冒号后的下一个字符
+		p.consume(COLON)           // 解析冒号
 		val := p.parseExpr(LOWEST) // 解析 Value
 		expr.Pairs[key] = val
 
-		// 如果下一个字符不是有括号，并且不是逗号，则结束循环
-		if !p.peekTokenIs(RBRACE) && !p.expectPeek(COMMA) {
-			return nil
+		// 如果下一个字符不是右括号，并且不是逗号，则结束循环
+		if !p.curTokenIs(RBRACE) {
+			p.consume(COMMA)
 		}
 	}
 
-	if !p.expectPeek(RBRACE) {
-		return nil
-	}
+	end := p.consume(RBRACE)
+	expr.end = end
 
 	return expr
 }
 
-func (p *Parser) parseExprList(end TokenType) []Expr {
+// 读取参数列表，知道遇到 end token，但是不消耗 end token
+func (p *Parser) parseExprList(end Token) []Expr {
 	exprs := make([]Expr, 0)
-	if p.peekTokenIs(end) {
-		p.nextToken()
+	if p.curTokenIs(end) {
 		return exprs
 	}
-	p.nextToken()                              // 消耗掉开始括号
 	exprs = append(exprs, p.parseExpr(LOWEST)) // 解析第一个参数
-	for p.peekTokenIs(COMMA) {
-		p.nextToken()
-		p.nextToken()
+	for p.curTokenIs(COMMA) {
+		p.consume(COMMA)
 		exprs = append(exprs, p.parseExpr(LOWEST))
-	}
-	if !p.expectPeek(end) {
-		return nil
 	}
 	return exprs
 }
 
 func (p *Parser) parseBlockStmt() *BlockStmt {
-	block := &BlockStmt{Tok: p.curTok}
+	start := p.nextToken()
+	block := &BlockStmt{start: start}
 	block.Stmts = make([]Stmt, 0)
-	p.nextToken()
 	for !p.curTokenIs(RBRACE) && !p.curTokenIs(EOF) {
 		stmt := p.parseStmt()
 		block.Stmts = append(block.Stmts, stmt)
-		// if stmt != nil {
-		// 	block.Stmts = append(block.Stmts, stmt)
-		// }
-		p.nextToken()
 	}
+	end := p.consume(RBRACE)
+	block.end = end
 	return block
 }
 
 func (p *Parser) parseIfExpr() Expr {
-	expr := &IfExpr{Tok: p.curTok}
-	if !p.expectPeek(LPAREN) {
-		return nil
-	}
-	p.nextToken() // 消耗左括号
+	pos := p.nextToken()
+	expr := &IfExpr{pos: pos}
+	p.consume(LPAREN)
 	expr.Cond = p.parseExpr(LOWEST)
-	if !p.expectPeek(RPAREN) {
-		return nil
-	}
-	if !p.expectPeek(LBRACE) {
-		return nil
-	}
+	p.consume(RPAREN)
+	p.expect(LBRACE)
 	expr.Consequence = p.parseBlockStmt()
 
 	// 判断是否有 else 部分
-	if p.peekTokenIs(ELSE) {
-		p.nextToken()
-		if !p.expectPeek(LBRACE) {
-			return nil
-		}
+	if p.curTokenIs(ELSE) {
+		elsePos := p.nextToken()
+		expr.elsePos = elsePos
+		p.expect(LBRACE)
 		expr.Alternative = p.parseBlockStmt()
 	}
 
@@ -367,82 +353,60 @@ func (p *Parser) parseIfExpr() Expr {
 
 func (p *Parser) parseFunctionParams() []*Identifier {
 	identifiers := make([]*Identifier, 0)
+	p.nextToken() // 消耗左括号
 	// 如果是右括号，直接返回
-	if p.peekTokenIs(RPAREN) {
-		p.nextToken()
+	if p.curTokenIs(RPAREN) {
+		p.consume(RPAREN)
 		return identifiers
 	}
-	p.nextToken()
-	ident := &Identifier{Tok: p.curTok, Value: p.curTok.Literal}
-	identifiers = append(identifiers, ident)
-	for p.peekTokenIs(COMMA) {
-		p.nextToken()
-		p.nextToken()
-		ident := &Identifier{Tok: p.curTok, Value: p.curTok.Literal}
-		identifiers = append(identifiers, ident)
+	val := p.curTok.Literal
+	pos := p.nextToken()
+	identifier := &Identifier{Pos: pos, Value: val}
+	identifiers = append(identifiers, identifier)
+	for p.curTokenIs(COMMA) {
+		p.consume(COMMA)
+		val := p.curTok.Literal
+		pos := p.nextToken()
+		identifier := &Identifier{Pos: pos, Value: val}
+		identifiers = append(identifiers, identifier)
 	}
-	if !p.expectPeek(RPAREN) {
-		return nil
-	}
+	p.consume(RPAREN)
 	return identifiers
 }
 
 func (p *Parser) parseFunctionLiteral() Expr {
-	expr := &FunctionLiteral{Tok: p.curTok}
-	if !p.expectPeek(LPAREN) {
-		return nil
-	}
+	pos := p.nextToken()
+	expr := &FunctionLiteral{pos: pos}
+	p.expect(LPAREN)
 	expr.Params = p.parseFunctionParams()
-	if !p.expectPeek(LBRACE) {
-		return nil
-	}
+	p.expect(LBRACE)
 	expr.Body = p.parseBlockStmt()
 	return expr
 }
 
-// func (p *Parser) parseCallArgs() []Expr {
-// 	args := make([]Expr, 0)
-// 	// 如果是右括号，直接返回
-// 	if p.peekTokenIs(RPAREN) {
-// 		p.nextToken()
-// 		return args
-// 	}
-// 	p.nextToken() // 消耗左括号
-// 	args = append(args, p.parseExpr(LOWEST))
-// 	// 如果是逗号，继续解析
-// 	for p.peekTokenIs(COMMA) {
-// 		p.nextToken()
-// 		p.nextToken()
-// 		args = append(args, p.parseExpr(LOWEST))
-// 	}
-// 	if !p.expectPeek(RPAREN) {
-// 		return nil
-// 	}
-// 	return args
-// }
-
 func (p *Parser) parseCallExpr(function Expr) Expr {
-	expr := &CallExpr{Tok: p.curTok, Function: function}
+	start := p.consume(LPAREN)
+	expr := &CallExpr{start: start, Function: function}
 	expr.Args = p.parseExprList(RPAREN)
+	end := p.consume(RPAREN)
+	expr.end = end
 	return expr
 }
 
 func (p *Parser) parseIndexExpr(left Expr) Expr {
-	expr := &IndexExpr{Tok: p.curTok, Left: left}
-	p.nextToken() // 消耗左边方括号
-	expr.Index = p.parseExpr(LOWEST)
-	if !p.expectPeek(RBRACKET) {
-		return nil
-	}
-	return expr
+	p.consume(LBRACKET)
+	indexExpr := &IndexExpr{Left: left}
+	indexExpr.Index = p.parseExpr(LOWEST)
+	end := p.consume(RBRACKET)
+	indexExpr.end = end
+	return indexExpr
 }
 
 func NewParser(input string) *Parser {
 	p := &Parser{
 		l:              NewLexer(input),
-		errors:         make([]string, 0),
-		prefixParseFns: make(map[TokenType]prefixParseFn),
-		infixParseFns:  make(map[TokenType]infixParseFn),
+		prefixParseFns: make(map[Token]prefixParseFn),
+		infixParseFns:  make(map[Token]infixParseFn),
 	}
 	// 注册前缀解析函数
 	p.registerPrefixFn(IDENT, p.parseIdentifier)
@@ -462,7 +426,7 @@ func NewParser(input string) *Parser {
 	// 注册中缀解析函数
 	p.registerInfixFn(PLUS, p.parseInfixExpr)
 	p.registerInfixFn(MINUS, p.parseInfixExpr)
-	p.registerInfixFn(ASTERISK, p.parseInfixExpr)
+	p.registerInfixFn(STAR, p.parseInfixExpr)
 	p.registerInfixFn(SLASH, p.parseInfixExpr)
 	p.registerInfixFn(EQ, p.parseInfixExpr)
 	p.registerInfixFn(NE, p.parseInfixExpr)
@@ -472,7 +436,6 @@ func NewParser(input string) *Parser {
 	p.registerInfixFn(LBRACKET, p.parseIndexExpr)
 
 	// read twice to set curTok and peekTok
-	p.nextToken()
 	p.nextToken()
 
 	return p

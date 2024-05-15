@@ -14,7 +14,7 @@ func b2i(b bool) int {
 	}
 }
 
-func threeway(op syntax.TokenType, cmp int) bool {
+func threeway(op syntax.Token, cmp int) bool {
 	switch op {
 	case syntax.EQ:
 		return cmp == 0

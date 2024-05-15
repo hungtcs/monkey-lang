@@ -1,68 +1,145 @@
 package syntax
 
+import (
+	"fmt"
+	"strings"
+	"unicode/utf8"
+)
+
+// 位置描述输入符文的位置。
+type Position struct {
+	file *string // filename
+	Line int32   // 1-based line number; 0 if line unknown
+	Col  int32   // 1-based column (rune) number; 0 if column unknown
+}
+
+func (p Position) add(s string) Position {
+	if n := strings.Count(s, "\n"); n > 0 {
+		p.Line += int32(n)
+		s = s[strings.LastIndex(s, "\n")+1:]
+		p.Col = 1
+	}
+	p.Col += int32(utf8.RuneCountInString(s))
+	return p
+}
+
+func (p Position) Filename() string {
+	if p.file != nil {
+		return *p.file
+	}
+	return "<invalid>"
+}
+
+func (p Position) String() string {
+	file := p.Filename()
+	if p.Line > 0 {
+		if p.Col > 0 {
+			return fmt.Sprintf("%s:%d:%d", file, p.Line, p.Col)
+		}
+		return fmt.Sprintf("%s:%d", file, p.Line)
+	}
+	return file
+}
+
+// MakePosition returns position with the specified components.
+func MakePosition(file *string, line, col int32) Position {
+	return Position{file, line, col}
+}
+
 type Lexer struct {
-	input        string
-	position     int
-	readPosition int
-	ch           byte
+	pos    Position // 当前读取的位置
+	input  string
+	cursor int
+}
+
+func (p *Lexer) recover(err *error) {
+	switch e := recover().(type) {
+	case nil:
+	case error:
+		*err = e
+	default:
+		*err = fmt.Errorf("parser panic: %v", e)
+	}
 }
 
 // 它首先检查了当前正在查看的字符l.ch，根据具体的字符来返回对应的词法单元。
 // 在返回词法单元之前，位于所输入字符串中的指针会前移，所以之后再次调用NextToken()时，l.ch字段就已经更新过了。
 // 最后，名为newToken的小型函数可以帮助初始化这些词法单元。
-func (l *Lexer) NextToken() Token {
-	l.skipWhitespace()
+func (l *Lexer) NextToken() TokenValue {
+	l.skipWhitespace() // 跳过空白字符
+	c := l.peekChar()
 
-	var tok Token
-	switch l.ch {
-	case '=':
-		switch l.peekChar() {
+	var tok TokenValue
+	switch c {
+	case '=', '!', '+', '-', '*', '/', '>', '<':
+		switch l.readChar() {
 		case '=':
-			ch := l.ch
-			l.readChar()
-			tok = Token{Type: EQ, Literal: string(ch) + string(l.ch)}
+			l.readChar() // 消耗 ==
+			switch c {
+			case '=':
+				tok = TokenValue{Type: EQ, Literal: string(c) + "="}
+			case '!':
+				tok = TokenValue{Type: NE, Literal: string(c) + "="}
+			case '+':
+				tok = TokenValue{Type: PLUS, Literal: string(c) + "="}
+			case '-':
+				tok = TokenValue{Type: MINUS, Literal: string(c) + "="}
+			case '*':
+				tok = TokenValue{Type: STAR, Literal: string(c) + "="}
+			case '/':
+				tok = TokenValue{Type: SLASH, Literal: string(c) + "="}
+			case '>':
+				tok = TokenValue{Type: GE, Literal: string(c) + "="}
+			case '<':
+				tok = TokenValue{Type: LE, Literal: string(c) + "="}
+			}
 		default:
-			tok = newToken(ASSIGN, l.ch)
+			switch c {
+			case '=':
+				tok = newToken(ASSIGN, c)
+			case '!':
+				tok = newToken(BANG, c)
+			case '+':
+				tok = newToken(PLUS, c)
+			case '-':
+				tok = newToken(MINUS, c)
+			case '*':
+				tok = newToken(STAR, c)
+			case '/':
+				tok = newToken(SLASH, c)
+			case '>':
+				tok = newToken(GT, c)
+			case '<':
+				tok = newToken(LT, c)
+			}
 		}
-	case '+':
-		tok = newToken(PLUS, l.ch)
-	case '-':
-		tok = newToken(MINUS, l.ch)
-	case '*':
-		tok = newToken(ASTERISK, l.ch)
-	case '/':
-		tok = newToken(SLASH, l.ch)
-	case '!':
-		switch l.peekChar() {
-		case '=':
-			ch := l.ch
-			l.readChar()
-			tok = Token{Type: NE, Literal: string(ch) + string(l.ch)}
-		default:
-			tok = newToken(BANG, l.ch)
-		}
-	case '<':
-		tok = newToken(LT, l.ch)
-	case '>':
-		tok = newToken(GT, l.ch)
 	case ',':
-		tok = newToken(COMMA, l.ch)
+		l.readChar()
+		tok = newToken(COMMA, c)
 	case ':':
-		tok = newToken(COLON, l.ch)
+		l.readChar()
+		tok = newToken(COLON, c)
 	case ';':
-		tok = newToken(SEMICOLON, l.ch)
+		l.readChar()
+		tok = newToken(SEMICOLON, c)
 	case '(':
-		tok = newToken(LPAREN, l.ch)
+		l.readChar()
+		tok = newToken(LPAREN, c)
 	case ')':
-		tok = newToken(RPAREN, l.ch)
+		l.readChar()
+		tok = newToken(RPAREN, c)
 	case '{':
-		tok = newToken(LBRACE, l.ch)
+		l.readChar()
+		tok = newToken(LBRACE, c)
 	case '}':
-		tok = newToken(RBRACE, l.ch)
+		l.readChar()
+		tok = newToken(RBRACE, c)
 	case '[':
-		tok = newToken(LBRACKET, l.ch)
+		l.readChar()
+		tok = newToken(LBRACKET, c)
 	case ']':
-		tok = newToken(RBRACKET, l.ch)
+		l.readChar()
+		tok = newToken(RBRACKET, c)
 	case '"':
 		tok.Type = STRING
 		tok.Literal = l.readString()
@@ -70,94 +147,96 @@ func (l *Lexer) NextToken() Token {
 		tok.Literal = ""
 		tok.Type = EOF
 	default:
-		if isLetter(l.ch) {
+		if isLetter(c) {
 			tok.Literal = l.readIdentifier()
 			tok.Type = LookupIdent(tok.Literal)
 			return tok
-		} else if isDigit(l.ch) {
+		} else if isDigit(c) {
 			tok.Literal = l.readNumber()
 			tok.Type = INT
 			return tok
 		} else {
-			tok = newToken(ILLEGAL, l.ch)
+			tok = newToken(ILLEGAL, c)
 		}
 	}
-	l.readChar()
 	return tok
 }
 
-// peekChar()与readChar()非常类似，但这个函数不会前移l.position和l.readPosition。
-// 它的目的只是窥视一下输入中的下一个字符，不会移动位于输入中的指针位置，
-// 这样就能知道下一步在调用readChar()时会返回什么。
-// 大多数词法分析器和语法分析器具有这样的“窥视”函数，且大部分情况是用来向前看一个字符的。
+// 读取当前游标指向的字符
 func (l *Lexer) peekChar() byte {
-	if l.readPosition >= len(l.input) {
+	if l.cursor >= len(l.input) {
 		return 0
 	} else {
-		return l.input[l.readPosition]
+		return l.input[l.cursor]
 	}
 }
 
-// readChar的目的是读取input中的下一个字符，并前移其在input中的位置。
-// 这个过程的第一件事就是检查是否已经到达input的末尾。
-// 如果是，则将l.ch设置为0，这是NUL字符的ASCII编码，用来表示“尚未读取任何内容”或“文件结尾”。
-// 如果还没有到达input的末尾，则将l.ch设置为下一个字符，即l.input[l.readPosition]指向的字符。
-//
-// 之后，将l.position更新为刚用过的l.readPosition，然后将l.readPosition加1。
-// 这样一来，l.readPosition就始终指向下一个将读取的字符位置，而l.position始终指向刚刚读取的位置。
-// 这个特性很快就会派上用场。
-func (l *Lexer) readChar() {
-	if l.readPosition >= len(l.input) {
-		l.ch = 0
-	} else {
-		l.ch = l.input[l.readPosition]
+// 向后移动游标，并返回游标对应的字符
+func (l *Lexer) readChar() byte {
+	// 到达文件末尾
+	if l.cursor >= len(l.input) {
+		return 0
 	}
-	l.position = l.readPosition
-	l.readPosition += 1
+
+	l.cursor += 1
+	c := l.peekChar()
+
+	// 设置位置
+	if c == '\n' {
+		l.pos.Col = 1
+		l.pos.Line += 1
+	} else {
+		l.pos.Col += 1
+	}
+	return c
 }
 
 func (l *Lexer) readNumber() string {
-	position := l.position
-	for isDigit(l.ch) {
+	position := l.cursor
+	for c := l.peekChar(); isDigit(c); c = l.peekChar() {
 		l.readChar()
 	}
-	return l.input[position:l.position]
+	return l.input[position:l.cursor]
 }
 
 func (l *Lexer) readString() string {
-	position := l.position + 1
-	for {
+	l.readChar() // 消耗引号
+	start := l.cursor
+	for c := l.peekChar(); c != '"' && c != 0; c = l.peekChar() {
 		l.readChar()
-		if l.ch == '"' || l.ch == 0 {
-			break
-		}
 	}
-	return l.input[position:l.position]
+	val := l.input[start:l.cursor]
+	l.readChar() // 消耗引号
+	return val
 }
 
 // readIdentifier()函数顾名思义，就是读入一个标识符并前移词法分析器的扫描位置，直到遇见非字母字符。
 func (l *Lexer) readIdentifier() string {
-	position := l.position
-	for isLetter(l.ch) {
+	position := l.cursor
+	for c := l.peekChar(); isLetter(c); c = l.peekChar() {
 		l.readChar()
 	}
-	return l.input[position:l.position]
+	return l.input[position:l.cursor]
 }
 
 func (l *Lexer) skipWhitespace() {
-	for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
+	for c := l.peekChar(); c == ' ' || c == '\t' || c == '\n' || c == '\r'; c = l.peekChar() {
 		l.readChar()
 	}
 }
 
 func NewLexer(input string) *Lexer {
-	l := &Lexer{input: input}
-	l.readChar()
+	l := &Lexer{
+		pos:   MakePosition(nil, 1, 1), // 初始位置，第一行第一个字符
+		input: input,
+	}
+	// 读入第一个字符
+	// l.readChar()
 	return l
 }
 
-func newToken(t TokenType, ch byte) Token {
-	return Token{
+func newToken(t Token, ch byte) TokenValue {
+	return TokenValue{
 		Type:    t,
 		Literal: string(ch),
 	}

@@ -37,17 +37,17 @@ type Indexable interface {
 
 type HasUnary interface {
 	Value
-	Unary(op syntax.TokenType) (_ Value, err error)
+	Unary(op syntax.Token) (_ Value, err error)
 }
 
 type HasBinary interface {
 	Value
-	Binary(op syntax.TokenType, y Value, side Side) (_ Value, err error)
+	Binary(op syntax.Token, y Value, side Side) (_ Value, err error)
 }
 
 type Comparable interface {
 	Value
-	Compare(op syntax.TokenType, y Value) (_ Value, err error)
+	Compare(op syntax.Token, y Value) (_ Value, err error)
 }
 
 // 有序类型，如数字
@@ -109,7 +109,7 @@ func (i Int) Cmp(y Value) (_ int, err error) {
 }
 
 // Binary implements HasBinary.
-func (i Int) Binary(op syntax.TokenType, y Value, side Side) (_ Value, err error) {
+func (i Int) Binary(op syntax.Token, y Value, side Side) (_ Value, err error) {
 	var yv Int
 	if y, ok := y.(Int); !ok {
 		return nil, nil
@@ -122,7 +122,7 @@ func (i Int) Binary(op syntax.TokenType, y Value, side Side) (_ Value, err error
 		return i + yv, nil
 	case syntax.MINUS:
 		return i - yv, nil
-	case syntax.ASTERISK:
+	case syntax.STAR:
 		return i * yv, nil
 	case syntax.SLASH:
 		return i / yv, nil
@@ -132,7 +132,7 @@ func (i Int) Binary(op syntax.TokenType, y Value, side Side) (_ Value, err error
 }
 
 // Unary implements HasUnary.
-func (i Int) Unary(op syntax.TokenType) (_ Value, err error) {
+func (i Int) Unary(op syntax.Token) (_ Value, err error) {
 	switch op {
 	case syntax.MINUS:
 		return -i, nil
@@ -166,7 +166,7 @@ func (b Bool) Hash() (uint32, error) {
 }
 
 // Compare implements Comparable.
-func (b Bool) Compare(op syntax.TokenType, y_ Value) (_ Value, err error) {
+func (b Bool) Compare(op syntax.Token, y_ Value) (_ Value, err error) {
 	y, ok := y_.(Bool)
 	if !ok {
 		return nil, fmt.Errorf("invalid cmp operator: %s %s %s", b, op, y_)
@@ -231,7 +231,7 @@ func (s String) Len() int {
 }
 
 // Binary implements HasBinary.
-func (s String) Binary(op syntax.TokenType, y Value, side Side) (_ Value, err error) {
+func (s String) Binary(op syntax.Token, y Value, side Side) (_ Value, err error) {
 	switch op {
 	case syntax.PLUS:
 		switch y := y.(type) {

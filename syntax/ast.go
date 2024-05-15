@@ -8,7 +8,8 @@ import (
 
 type Node interface {
 	fmt.Stringer
-	Literal() string // 返回与其关联的词法单元字面量
+	Span() (start, end Position) // 返回节点的开始和结束位置
+	Literal() string             // 返回与其关联的词法单元字面量
 }
 
 type Stmt interface {
@@ -23,6 +24,11 @@ type Expr interface {
 
 type Program struct {
 	Stmts []Stmt
+}
+
+// Span implements Node.
+func (p *Program) Span() (start Position, end Position) {
+	panic("unimplemented")
 }
 
 // String implements Node.
@@ -43,8 +49,14 @@ func (p *Program) Literal() string {
 }
 
 type Identifier struct {
-	Tok   Token
+	// Tok   TokenValue
+	Pos   Position
 	Value string
+}
+
+// Span implements Expr.
+func (i *Identifier) Span() (start Position, end Position) {
+	return i.Pos, i.Pos.add(i.Value)
 }
 
 // String implements Expr.
@@ -54,7 +66,7 @@ func (i *Identifier) String() string {
 
 // Literal implements Expr.
 func (i *Identifier) Literal() string {
-	return i.Tok.Literal
+	return i.String()
 }
 
 // expr implements Expr.
@@ -63,15 +75,21 @@ func (i *Identifier) expr() {
 }
 
 type LetStmt struct {
-	Tok   Token
+	// Tok   Token
+	Pos   Position
 	Name  *Identifier
 	Value Expr
+}
+
+// Span implements Stmt.
+func (l *LetStmt) Span() (start Position, end Position) {
+	return l.Pos, l.Pos.add("let")
 }
 
 // String implements Stmt.
 func (l *LetStmt) String() string {
 	var out bytes.Buffer
-	out.WriteString(l.Tok.Literal + " ")
+	out.WriteString("let ")
 	out.WriteString(l.Name.String())
 	out.WriteString(" = ")
 	if l.Value != nil {
@@ -83,7 +101,7 @@ func (l *LetStmt) String() string {
 
 // Literal implements Stat.
 func (l *LetStmt) Literal() string {
-	return l.Tok.Literal
+	return "let"
 }
 
 // stmt implements Stat.
@@ -92,14 +110,20 @@ func (l *LetStmt) stmt() {
 }
 
 type ReturnStmt struct {
-	Tok   Token
+	Pos   Position
 	Value Expr
+}
+
+// Span implements Stmt.
+func (r *ReturnStmt) Span() (start Position, end Position) {
+	_, end = r.Value.Span()
+	return r.Pos, end
 }
 
 // String implements Stmt.
 func (r *ReturnStmt) String() string {
 	var out bytes.Buffer
-	out.WriteString(r.Tok.Literal + " ")
+	out.WriteString("return ")
 	if r.Value != nil {
 		out.WriteString(r.Value.String())
 	}
@@ -109,7 +133,7 @@ func (r *ReturnStmt) String() string {
 
 // Literal implements Stmt.
 func (r *ReturnStmt) Literal() string {
-	return r.Tok.Literal
+	return RETURN.String()
 }
 
 // stmt implements Stmt.
@@ -118,8 +142,14 @@ func (r *ReturnStmt) stmt() {
 }
 
 type ExprStmt struct {
-	Tok  Token
+	// Tok TokenValue
+	// Pos  Position
 	Expr Expr
+}
+
+// Span implements Stmt.
+func (e *ExprStmt) Span() (start Position, end Position) {
+	return e.Expr.Span()
 }
 
 // String implements Stmt.
@@ -132,7 +162,8 @@ func (e *ExprStmt) String() string {
 
 // Literal implements Stmt.
 func (e *ExprStmt) Literal() string {
-	return e.Tok.Literal
+	// return e.Tok.Literal
+	return e.Expr.Literal()
 }
 
 // stmt implements Stmt.
@@ -141,18 +172,24 @@ func (e *ExprStmt) stmt() {
 }
 
 type IntegerLiteral struct {
-	Tok   Token
+	Raw   string
+	Pos   Position
 	Value int64
+}
+
+// Span implements Expr.
+func (i *IntegerLiteral) Span() (start Position, end Position) {
+	return i.Pos, i.Pos.add(i.Raw)
 }
 
 // Literal implements Expr.
 func (i *IntegerLiteral) Literal() string {
-	return i.Tok.Literal
+	return i.Raw
 }
 
 // String implements Expr.
 func (i *IntegerLiteral) String() string {
-	return i.Tok.Literal
+	return i.Raw
 }
 
 // expr implements Expr.
@@ -161,18 +198,23 @@ func (i *IntegerLiteral) expr() {
 }
 
 type StringLiteral struct {
-	Tok   Token
+	pos   Position
 	Value string
+}
+
+// Span implements Expr.
+func (s *StringLiteral) Span() (start Position, end Position) {
+	return s.pos, s.pos.add(s.Value)
 }
 
 // Literal implements Expr.
 func (s *StringLiteral) Literal() string {
-	return s.Tok.Literal
+	return s.Value
 }
 
 // String implements Expr.
 func (s *StringLiteral) String() string {
-	return s.Tok.Literal
+	return s.Value
 }
 
 // expr implements Expr.
@@ -182,21 +224,27 @@ func (s *StringLiteral) expr() {
 
 // 单目运算表达式
 type PrefixExpr struct {
-	Tok   Token
-	Op    TokenType
+	Op    Token
+	Pos   Position
 	Right Expr
+}
+
+// Span implements Expr.
+func (p *PrefixExpr) Span() (start Position, end Position) {
+	_, end = p.Right.Span()
+	return p.Pos, end
 }
 
 // Literal implements Expr.
 func (p *PrefixExpr) Literal() string {
-	return p.Tok.Literal
+	return p.String()
 }
 
 // String implements Expr.
 func (p *PrefixExpr) String() string {
 	var out bytes.Buffer
 	out.WriteString("(")
-	out.WriteString(string(p.Op))
+	out.WriteString(p.Op.String())
 	out.WriteString(p.Right.String())
 	out.WriteString(")")
 	return out.String()
@@ -208,15 +256,21 @@ func (p *PrefixExpr) expr() {
 }
 
 type InfixExpr struct {
-	Tok   Token
 	Left  Expr
-	Op    TokenType
+	Op    Token
 	Right Expr
+}
+
+// Span implements Expr.
+func (i *InfixExpr) Span() (start Position, end Position) {
+	start, _ = i.Left.Span()
+	_, end = i.Right.Span()
+	return start, end
 }
 
 // Literal implements Expr.
 func (i *InfixExpr) Literal() string {
-	return i.Tok.Literal
+	return i.String()
 }
 
 // String implements Expr.
@@ -224,7 +278,7 @@ func (i *InfixExpr) String() string {
 	var out bytes.Buffer
 	out.WriteString("(")
 	out.WriteString(i.Left.String())
-	out.WriteString(" " + string(i.Op) + " ")
+	out.WriteString(" " + string(i.Op.String()) + " ")
 	out.WriteString(i.Right.String())
 	out.WriteString(")")
 	return out.String()
@@ -236,18 +290,24 @@ func (i *InfixExpr) expr() {
 }
 
 type Boolean struct {
-	Tok   Token
+	pos   Position
+	raw   string
 	Value bool
+}
+
+// Span implements Expr.
+func (b *Boolean) Span() (start Position, end Position) {
+	return b.pos, b.pos.add(b.raw)
 }
 
 // Literal implements Expr.
 func (b *Boolean) Literal() string {
-	return b.Tok.Literal
+	return b.raw
 }
 
 // String implements Expr.
 func (b *Boolean) String() string {
-	return b.Tok.Literal
+	return b.raw
 }
 
 // expr implements Expr.
@@ -256,13 +316,19 @@ func (b *Boolean) expr() {
 }
 
 type BlockStmt struct {
-	Tok   Token
+	start Position
+	end   Position
 	Stmts []Stmt
+}
+
+// Span implements Stmt.
+func (b *BlockStmt) Span() (start Position, end Position) {
+	return start, end
 }
 
 // Literal implements Stmt.
 func (b *BlockStmt) Literal() string {
-	return b.Tok.Literal
+	return "if"
 }
 
 // String implements Stmt.
@@ -282,15 +348,26 @@ func (b *BlockStmt) stmt() {
 }
 
 type IfExpr struct {
-	Tok         Token
+	pos         Position
+	elsePos     Position
 	Cond        Expr // 条件表达式
 	Consequence *BlockStmt
 	Alternative *BlockStmt
 }
 
+// Span implements Expr.
+func (i *IfExpr) Span() (start Position, end Position) {
+	body := i.Alternative
+	if body == nil {
+		body = i.Consequence
+	}
+	_, end = body.Stmts[len(body.Stmts)-1].Span()
+	return i.pos, end
+}
+
 // Literal implements Expr.
 func (i *IfExpr) Literal() string {
-	return i.Tok.Literal
+	return "if"
 }
 
 // String implements Expr.
@@ -313,14 +390,19 @@ func (i *IfExpr) expr() {
 }
 
 type FunctionLiteral struct {
-	Tok    Token
+	pos    Position
 	Params []*Identifier
 	Body   *BlockStmt
 }
 
+// Span implements Expr.
+func (f *FunctionLiteral) Span() (start Position, end Position) {
+	panic("unimplemented")
+}
+
 // Literal implements Expr.
 func (f *FunctionLiteral) Literal() string {
-	return f.Tok.Literal
+	return "fn"
 }
 
 // String implements Expr.
@@ -330,8 +412,7 @@ func (f *FunctionLiteral) String() string {
 	for _, p := range f.Params {
 		params = append(params, p.String())
 	}
-	out.WriteString(f.Tok.Literal)
-	out.WriteString("(")
+	out.WriteString("fn(")
 	out.WriteString(strings.Join(params, ", "))
 	out.WriteString(") ")
 	out.WriteString(f.Body.String())
@@ -344,14 +425,20 @@ func (f *FunctionLiteral) expr() {
 }
 
 type CallExpr struct {
-	Tok      Token
+	start    Position
+	end      Position
 	Function Expr
 	Args     []Expr
 }
 
+// Span implements Expr.
+func (c *CallExpr) Span() (start Position, end Position) {
+	return start, end
+}
+
 // Literal implements Expr.
 func (c *CallExpr) Literal() string {
-	return c.Tok.Literal
+	return "call"
 }
 
 // String implements Expr.
@@ -374,13 +461,19 @@ func (c *CallExpr) expr() {
 }
 
 type ArrayLiteral struct {
-	Tok   Token
+	start Position
+	end   Position
 	Items []Expr
+}
+
+// Span implements Expr.
+func (a *ArrayLiteral) Span() (start Position, end Position) {
+	return start, end
 }
 
 // Literal implements Expr.
 func (a *ArrayLiteral) Literal() string {
-	return a.Tok.Literal
+	return "["
 }
 
 // String implements Expr.
@@ -390,7 +483,7 @@ func (a *ArrayLiteral) String() string {
 		items = append(items, item.String())
 	}
 	var out bytes.Buffer
-	out.WriteString(a.Tok.Literal)
+	// out.WriteString(a.Tok.Literal)
 	out.WriteString("[")
 	out.WriteString(strings.Join(items, ", "))
 	out.WriteString("]")
@@ -403,19 +496,24 @@ func (a *ArrayLiteral) expr() {
 }
 
 type MapLiteral struct {
-	Tok   Token
+	start Position
+	end   Position
 	Pairs map[Expr]Expr
+}
+
+// Span implements Expr.
+func (m *MapLiteral) Span() (start Position, end Position) {
+	return start, end
 }
 
 // Literal implements Expr.
 func (m *MapLiteral) Literal() string {
-	return m.Tok.Literal
+	return m.String()
 }
 
 // String implements Expr.
 func (m *MapLiteral) String() string {
 	var out bytes.Buffer
-	out.WriteString(m.Tok.Literal)
 	out.WriteString("{")
 	for k, v := range m.Pairs {
 		out.WriteString(k.String())
@@ -433,14 +531,20 @@ func (m *MapLiteral) expr() {
 }
 
 type IndexExpr struct {
-	Tok   Token
+	end   Position
 	Left  Expr
 	Index Expr
 }
 
+// Span implements Expr.
+func (i *IndexExpr) Span() (start Position, end Position) {
+	start, _ = i.Left.Span()
+	return start, i.end
+}
+
 // Literal implements Expr.
 func (i *IndexExpr) Literal() string {
-	return i.Tok.Literal
+	return ""
 }
 
 // String implements Expr.

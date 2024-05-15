@@ -38,11 +38,9 @@ func main() {
 			panic(err)
 		}
 		parser := syntax.NewParser(string(data))
-		program := parser.Parse()
-		if len(parser.Errors()) > 0 {
-			for _, msg := range parser.Errors() {
-				fmt.Printf("msg: %v\n", msg)
-			}
+		program, err := parser.Parse()
+		if err != nil {
+			fmt.Println(err)
 			return
 		}
 
