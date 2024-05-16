@@ -41,7 +41,7 @@ type (
 type Parser struct {
 	l *Lexer
 
-	pos    Position
+	// pos    Position
 	curTok TokenValue
 
 	prefixParseFns map[Token]prefixParseFn
@@ -64,9 +64,7 @@ func (p *Parser) noPrefixParseFnError(t Token) {
 }
 
 func (p *Parser) nextToken() Position {
-	pos := p.l.pos
-	p.pos = pos
-
+	pos := p.curTok.pos
 	p.curTok = p.l.NextToken()
 	return pos
 }
@@ -80,7 +78,7 @@ func (p *Parser) expect(t Token) {
 	if !p.curTokenIs(t) {
 		panic(
 			NewError(
-				p.pos,
+				p.curTok.pos,
 				fmt.Sprintf(
 					`expected next token to be "%s", got "%s" instead`,
 					t, p.curTok,
@@ -97,7 +95,7 @@ func (p *Parser) consume(t Token) Position {
 	}
 	panic(
 		NewError(
-			p.pos,
+			p.curTok.pos,
 			fmt.Sprintf(
 				`expected next token to be "%s", got "%s" instead`,
 				t, p.curTok,

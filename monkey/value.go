@@ -6,6 +6,7 @@ import (
 	"hash/maphash"
 	"math/big"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/hungtcs/monkey-lang/syntax"
 )
@@ -22,6 +23,15 @@ type Value interface {
 	Type() string
 	Hash() (uint32, error)
 	Truth() bool
+}
+
+type Iterable interface {
+	Value
+}
+
+type Sequence interface {
+	Iterable
+	Len() int
 }
 
 type Mapping interface {
@@ -227,7 +237,7 @@ func (s String) Index(i int) Value {
 
 // Len implements Indexable.
 func (s String) Len() int {
-	return len(s)
+	return utf8.RuneCountInString(string(s))
 }
 
 // Binary implements HasBinary.
@@ -307,6 +317,11 @@ type MapEntry struct {
 
 type Map struct {
 	entries map[uint32]MapEntry
+}
+
+// Len implements Sequence.
+func (m *Map) Len() int {
+	return len(m.entries)
 }
 
 // Get implements Mapping.
@@ -464,6 +479,7 @@ var (
 	_ Indexable      = (*Array)(nil)
 	_ Value          = (*Map)(nil)
 	_ Mapping        = (*Map)(nil)
+	_ Sequence       = (*Map)(nil)
 	_ Value          = (*returnValue)(nil)
 	_ Value          = (*Function)(nil)
 	_ Value          = (*BuiltinFunction)(nil)

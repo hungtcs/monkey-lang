@@ -10,3 +10,8 @@ print("a:", map["a"])
 print("b:", map["b"])
 print("true:", map[true])
 print("false:", map[false])
+
+print("", len("你好"))
+
+let 你好 = 1
+print("你好: ", 你好)

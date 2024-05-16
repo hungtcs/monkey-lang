@@ -110,6 +110,7 @@ func LookupIdent(ident string) Token {
 }
 
 type TokenValue struct {
+	pos     Position
 	Type    Token
 	Literal string
 }

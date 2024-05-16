@@ -3,6 +3,7 @@ package syntax
 import (
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -68,78 +69,79 @@ func (p *Lexer) recover(err *error) {
 func (l *Lexer) NextToken() TokenValue {
 	l.skipWhitespace() // 跳过空白字符
 	c := l.peekChar()
-
+	start := l.pos
 	var tok TokenValue
 	switch c {
 	case '=', '!', '+', '-', '*', '/', '>', '<':
-		switch l.readChar() {
+		l.nextChar()
+		switch l.peekChar() {
 		case '=':
-			l.readChar() // 消耗 ==
+			l.nextChar()
 			switch c {
 			case '=':
-				tok = TokenValue{Type: EQ, Literal: string(c) + "="}
+				tok = TokenValue{pos: start, Type: EQ, Literal: string(c) + "="}
 			case '!':
-				tok = TokenValue{Type: NE, Literal: string(c) + "="}
+				tok = TokenValue{pos: start, Type: NE, Literal: string(c) + "="}
 			case '+':
-				tok = TokenValue{Type: PLUS, Literal: string(c) + "="}
+				tok = TokenValue{pos: start, Type: PLUS, Literal: string(c) + "="}
 			case '-':
-				tok = TokenValue{Type: MINUS, Literal: string(c) + "="}
+				tok = TokenValue{pos: start, Type: MINUS, Literal: string(c) + "="}
 			case '*':
-				tok = TokenValue{Type: STAR, Literal: string(c) + "="}
+				tok = TokenValue{pos: start, Type: STAR, Literal: string(c) + "="}
 			case '/':
-				tok = TokenValue{Type: SLASH, Literal: string(c) + "="}
+				tok = TokenValue{pos: start, Type: SLASH, Literal: string(c) + "="}
 			case '>':
-				tok = TokenValue{Type: GE, Literal: string(c) + "="}
+				tok = TokenValue{pos: start, Type: GE, Literal: string(c) + "="}
 			case '<':
-				tok = TokenValue{Type: LE, Literal: string(c) + "="}
+				tok = TokenValue{pos: start, Type: LE, Literal: string(c) + "="}
 			}
 		default:
 			switch c {
 			case '=':
-				tok = newToken(ASSIGN, c)
+				tok = createToken(ASSIGN, c, start)
 			case '!':
-				tok = newToken(BANG, c)
+				tok = createToken(BANG, c, start)
 			case '+':
-				tok = newToken(PLUS, c)
+				tok = createToken(PLUS, c, start)
 			case '-':
-				tok = newToken(MINUS, c)
+				tok = createToken(MINUS, c, start)
 			case '*':
-				tok = newToken(STAR, c)
+				tok = createToken(STAR, c, start)
 			case '/':
-				tok = newToken(SLASH, c)
+				tok = createToken(SLASH, c, start)
 			case '>':
-				tok = newToken(GT, c)
+				tok = createToken(GT, c, start)
 			case '<':
-				tok = newToken(LT, c)
+				tok = createToken(LT, c, start)
 			}
 		}
 	case ',':
-		l.readChar()
-		tok = newToken(COMMA, c)
+		l.nextChar()
+		tok = createToken(COMMA, c, start)
 	case ':':
-		l.readChar()
-		tok = newToken(COLON, c)
+		l.nextChar()
+		tok = createToken(COLON, c, start)
 	case ';':
-		l.readChar()
-		tok = newToken(SEMICOLON, c)
+		l.nextChar()
+		tok = createToken(SEMICOLON, c, start)
 	case '(':
-		l.readChar()
-		tok = newToken(LPAREN, c)
+		l.nextChar()
+		tok = createToken(LPAREN, c, start)
 	case ')':
-		l.readChar()
-		tok = newToken(RPAREN, c)
+		l.nextChar()
+		tok = createToken(RPAREN, c, start)
 	case '{':
-		l.readChar()
-		tok = newToken(LBRACE, c)
+		l.nextChar()
+		tok = createToken(LBRACE, c, start)
 	case '}':
-		l.readChar()
-		tok = newToken(RBRACE, c)
+		l.nextChar()
+		tok = createToken(RBRACE, c, start)
 	case '[':
-		l.readChar()
-		tok = newToken(LBRACKET, c)
+		l.nextChar()
+		tok = createToken(LBRACKET, c, start)
 	case ']':
-		l.readChar()
-		tok = newToken(RBRACKET, c)
+		l.nextChar()
+		tok = createToken(RBRACKET, c, start)
 	case '"':
 		tok.Type = STRING
 		tok.Literal = l.readString()
@@ -147,81 +149,97 @@ func (l *Lexer) NextToken() TokenValue {
 		tok.Literal = ""
 		tok.Type = EOF
 	default:
-		if isLetter(c) {
+		if isIdentifierStart(c) {
+			tok.pos = start
 			tok.Literal = l.readIdentifier()
 			tok.Type = LookupIdent(tok.Literal)
-			return tok
 		} else if isDigit(c) {
+			tok.pos = start
 			tok.Literal = l.readNumber()
 			tok.Type = INT
-			return tok
 		} else {
-			tok = newToken(ILLEGAL, c)
+			tok = createToken(ILLEGAL, c, start)
 		}
 	}
+	tok.pos = start
 	return tok
 }
 
 // 读取当前游标指向的字符
-func (l *Lexer) peekChar() byte {
+func (l *Lexer) peekChar() rune {
 	if l.cursor >= len(l.input) {
 		return 0
-	} else {
-		return l.input[l.cursor]
 	}
+
+	// ASCII
+	if b := l.input[l.cursor]; b < utf8.RuneSelf {
+		return rune(b)
+	}
+
+	r, _ := utf8.DecodeRuneInString(l.input[l.cursor:])
+	return r
 }
 
 // 向后移动游标，并返回游标对应的字符
-func (l *Lexer) readChar() byte {
+func (l *Lexer) nextChar() rune {
 	// 到达文件末尾
 	if l.cursor >= len(l.input) {
 		return 0
 	}
 
-	l.cursor += 1
-	c := l.peekChar()
+	var r rune
+	var s int
+	if b := l.input[l.cursor]; b < utf8.RuneSelf {
+		s = 1
+		r = rune(b)
+	} else {
+		r, s = utf8.DecodeRuneInString(l.input[l.cursor:])
+	}
+
+	l.cursor += s
 
 	// 设置位置
-	if c == '\n' {
+	if r == '\n' {
 		l.pos.Col = 1
 		l.pos.Line += 1
 	} else {
 		l.pos.Col += 1
 	}
-	return c
+
+	return r
 }
 
 func (l *Lexer) readNumber() string {
 	position := l.cursor
 	for c := l.peekChar(); isDigit(c); c = l.peekChar() {
-		l.readChar()
+		l.nextChar()
 	}
 	return l.input[position:l.cursor]
 }
 
 func (l *Lexer) readString() string {
-	l.readChar() // 消耗引号
+	l.nextChar() // 消耗引号
 	start := l.cursor
 	for c := l.peekChar(); c != '"' && c != 0; c = l.peekChar() {
-		l.readChar()
+		l.nextChar()
 	}
 	val := l.input[start:l.cursor]
-	l.readChar() // 消耗引号
+	l.nextChar() // 消耗引号
 	return val
 }
 
 // readIdentifier()函数顾名思义，就是读入一个标识符并前移词法分析器的扫描位置，直到遇见非字母字符。
 func (l *Lexer) readIdentifier() string {
 	position := l.cursor
-	for c := l.peekChar(); isLetter(c); c = l.peekChar() {
-		l.readChar()
+	for c := l.peekChar(); isIdentifier(c); c = l.peekChar() {
+		l.nextChar()
 	}
 	return l.input[position:l.cursor]
 }
 
 func (l *Lexer) skipWhitespace() {
 	for c := l.peekChar(); c == ' ' || c == '\t' || c == '\n' || c == '\r'; c = l.peekChar() {
-		l.readChar()
+		l.nextChar()
 	}
 }
 
@@ -235,23 +253,23 @@ func NewLexer(input string) *Lexer {
 	return l
 }
 
-func newToken(t Token, ch byte) TokenValue {
+func createToken(t Token, ch rune, pos Position) TokenValue {
 	return TokenValue{
+		pos:     pos,
 		Type:    t,
 		Literal: string(ch),
 	}
 }
 
-func isDigit(ch byte) bool {
+func isDigit(ch rune) bool {
 	return '0' <= ch && ch <= '9'
 }
 
-// isLetter辅助函数用来判断给定的参数是否为字母。
-// 值得注意的是，这个函数虽然看起来简短，但意义重大，其决定了解释器所能处理的语言形式。
-// 比如示例中包含ch =='_'，这意味着下划线_会被视为字母，允许在标识符和关键字中使用。
-// 因此可以使用诸如foo_bar之类的变量名。
-// 其他编程语言甚至允许在标识符中使用问号和感叹号。
-// 如果读者也想这么做，那么可以修改这个isLetter函数。
-func isLetter(ch byte) bool {
-	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_'
+func isIdentifier(c rune) bool {
+	return isIdentifierStart(c) || isDigit(c)
+}
+
+// 判断 c 是否为一个合法标识符的开始
+func isIdentifierStart(c rune) bool {
+	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_' || unicode.IsLetter(c)
 }
