@@ -18,7 +18,7 @@ func startRepl() {
 	fmt.Printf("Hello %s! This is the Monkey programming language!\n", user.Username)
 	fmt.Printf("Feel free to type in commands\n")
 
-	if err := repl.Start(os.Stdin, os.Stdout); err != nil {
+	if err := repl.Start(); err != nil {
 		panic(err)
 	}
 }

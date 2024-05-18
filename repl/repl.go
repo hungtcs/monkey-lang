@@ -1,48 +1,97 @@
 package repl
 
 import (
-	"bufio"
+	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
 
+	"github.com/chzyer/readline"
 	"github.com/hungtcs/monkey-lang/monkey"
 	"github.com/hungtcs/monkey-lang/syntax"
 )
 
-const PROMPT = ">> "
+const PROMPT = "\033[90m>>\033[0m "
+const CONTINUE_PROMPT = "\033[90m..\033[0m "
 
-func Start(in io.Reader, out io.Writer) error {
+var interrupted = make(chan os.Signal, 1)
+
+func Start() (err error) {
+	signal.Notify(interrupted, os.Interrupt)
+	defer signal.Stop(interrupted)
+
+	rl, err := readline.New(PROMPT)
+	if err != nil {
+		return err
+	}
+	defer rl.Close()
+
 	env := monkey.NewEnv(nil)
-	scanner := bufio.NewScanner(in)
 
 	for {
-		fmt.Fprint(out, PROMPT)
-		if !scanner.Scan() {
+		if err := repl(rl, env); err != nil {
+			if err == readline.ErrInterrupt {
+				fmt.Println("(To exit, press Ctrl+D)")
+				continue
+			}
 			break
 		}
-		line := scanner.Text()
-		parser := syntax.NewParser(line)
-		program, err := parser.Parse()
-		if err != nil {
-			printParseError(out, err)
-			continue
-		}
-
-		value, err := monkey.Eval(program, env)
-		if err != nil {
-			io.WriteString(out, err.Error())
-			io.WriteString(out, "\n")
-		}
-		if value != nil {
-			io.WriteString(out, value.String())
-			io.WriteString(out, "\n")
-		}
 	}
-	return scanner.Err()
+	return nil
 }
 
-func printParseError(out io.Writer, err error) {
-	io.WriteString(out, "Woops! We ran into some monkey business here!\n")
-	io.WriteString(out, " parser errors:\n")
-	io.WriteString(out, "\t"+err.Error()+"\n")
+func repl(rl *readline.Instance, env *monkey.Env) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-interrupted:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	var eof = false
+	rl.SetPrompt(PROMPT)
+	readline := func() (string, error) {
+		line, err := rl.Readline()
+		rl.SetPrompt(CONTINUE_PROMPT)
+		if err != nil {
+			if err == io.EOF {
+				eof = true
+			}
+			return "", err
+		}
+		return line + "\n", nil
+	}
+
+	line, err := readline()
+	if err != nil {
+		return err
+	}
+
+	parser := syntax.NewParser(line)
+	program, err := parser.Parse()
+	if err != nil {
+		if eof {
+			return io.EOF
+		}
+		printError(err)
+		return nil
+	}
+	val, err := monkey.Eval(program, env)
+	if err != nil {
+		printError(err)
+		return nil
+	}
+	if val != monkey.Null {
+		fmt.Fprintln(os.Stdout, val.String())
+	}
+
+	return nil
+}
+
+func printError(err error) {
+	fmt.Fprintln(os.Stderr, err.Error())
 }

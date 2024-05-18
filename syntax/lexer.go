@@ -7,50 +7,12 @@ import (
 	"unicode/utf8"
 )
 
-// 位置描述输入符文的位置。
-type Position struct {
-	file *string // filename
-	Line int32   // 1-based line number; 0 if line unknown
-	Col  int32   // 1-based column (rune) number; 0 if column unknown
-}
-
-func (p Position) add(s string) Position {
-	if n := strings.Count(s, "\n"); n > 0 {
-		p.Line += int32(n)
-		s = s[strings.LastIndex(s, "\n")+1:]
-		p.Col = 1
-	}
-	p.Col += int32(utf8.RuneCountInString(s))
-	return p
-}
-
-func (p Position) Filename() string {
-	if p.file != nil {
-		return *p.file
-	}
-	return "<invalid>"
-}
-
-func (p Position) String() string {
-	file := p.Filename()
-	if p.Line > 0 {
-		if p.Col > 0 {
-			return fmt.Sprintf("%s:%d:%d", file, p.Line, p.Col)
-		}
-		return fmt.Sprintf("%s:%d", file, p.Line)
-	}
-	return file
-}
-
-// MakePosition returns position with the specified components.
-func MakePosition(file *string, line, col int32) Position {
-	return Position{file, line, col}
-}
+type ReadLineFunc func() (string, error)
 
 type Lexer struct {
-	pos    Position // 当前读取的位置
-	input  string
-	cursor int
+	pos      Position // 当前读取的位置
+	rest     string
+	readline ReadLineFunc
 }
 
 func (p *Lexer) recover(err *error) {
@@ -68,15 +30,15 @@ func (p *Lexer) recover(err *error) {
 // 最后，名为newToken的小型函数可以帮助初始化这些词法单元。
 func (l *Lexer) NextToken() TokenValue {
 	l.skipWhitespace() // 跳过空白字符
-	c := l.peekChar()
+	c := l.peekRune()
 	start := l.pos
 	var tok TokenValue
 	switch c {
 	case '=', '!', '+', '-', '*', '/', '>', '<':
-		l.nextChar()
-		switch l.peekChar() {
+		l.nextRune()
+		switch l.peekRune() {
 		case '=':
-			l.nextChar()
+			l.nextRune()
 			switch c {
 			case '=':
 				tok = TokenValue{pos: start, Type: EQ, Literal: string(c) + "="}
@@ -116,31 +78,31 @@ func (l *Lexer) NextToken() TokenValue {
 			}
 		}
 	case ',':
-		l.nextChar()
+		l.nextRune()
 		tok = createToken(COMMA, c, start)
 	case ':':
-		l.nextChar()
+		l.nextRune()
 		tok = createToken(COLON, c, start)
 	case ';':
-		l.nextChar()
+		l.nextRune()
 		tok = createToken(SEMICOLON, c, start)
 	case '(':
-		l.nextChar()
+		l.nextRune()
 		tok = createToken(LPAREN, c, start)
 	case ')':
-		l.nextChar()
+		l.nextRune()
 		tok = createToken(RPAREN, c, start)
 	case '{':
-		l.nextChar()
+		l.nextRune()
 		tok = createToken(LBRACE, c, start)
 	case '}':
-		l.nextChar()
+		l.nextRune()
 		tok = createToken(RBRACE, c, start)
 	case '[':
-		l.nextChar()
+		l.nextRune()
 		tok = createToken(LBRACKET, c, start)
 	case ']':
-		l.nextChar()
+		l.nextRune()
 		tok = createToken(RBRACKET, c, start)
 	case '"':
 		tok.Type = STRING
@@ -165,38 +127,59 @@ func (l *Lexer) NextToken() TokenValue {
 	return tok
 }
 
+func (l *Lexer) eof() bool {
+	return len(l.rest) == 0 && !l.readLine()
+}
+
+func (l *Lexer) readLine() bool {
+	if l.readline != nil {
+		var err error
+		l.rest, err = l.readline()
+		if err != nil {
+			panic(err) // EOF or ErrInterrupt
+		}
+		return len(l.rest) > 0
+	}
+	return false
+}
+
 // 读取当前游标指向的字符
-func (l *Lexer) peekChar() rune {
-	if l.cursor >= len(l.input) {
+func (l *Lexer) peekRune() rune {
+	if l.eof() {
 		return 0
 	}
 
 	// ASCII
-	if b := l.input[l.cursor]; b < utf8.RuneSelf {
+	if b := l.rest[0]; b < utf8.RuneSelf {
 		return rune(b)
 	}
 
-	r, _ := utf8.DecodeRuneInString(l.input[l.cursor:])
+	r, _ := utf8.DecodeRuneInString(l.rest[0:])
 	return r
 }
 
 // 向后移动游标，并返回游标对应的字符
-func (l *Lexer) nextChar() rune {
-	// 到达文件末尾
-	if l.cursor >= len(l.input) {
-		return 0
+func (l *Lexer) nextRune() rune {
+	if len(l.rest) == 0 {
+		if !l.readLine() {
+			panic("internal scanner error: readRune at EOF")
+		}
+		// Redundant, but eliminates the bounds-check below.
+		if len(l.rest) == 0 {
+			return 0
+		}
 	}
 
 	var r rune
 	var s int
-	if b := l.input[l.cursor]; b < utf8.RuneSelf {
+	if b := l.rest[0]; b < utf8.RuneSelf {
 		s = 1
 		r = rune(b)
 	} else {
-		r, s = utf8.DecodeRuneInString(l.input[l.cursor:])
+		r, s = utf8.DecodeRuneInString(l.rest[0:])
 	}
 
-	l.cursor += s
+	l.rest = l.rest[s:]
 
 	// 设置位置
 	if r == '\n' {
@@ -210,46 +193,46 @@ func (l *Lexer) nextChar() rune {
 }
 
 func (l *Lexer) readNumber() string {
-	position := l.cursor
-	for c := l.peekChar(); isDigit(c); c = l.peekChar() {
-		l.nextChar()
+	raw := new(strings.Builder)
+	for c := l.peekRune(); isDigit(c); c = l.peekRune() {
+		raw.WriteRune(c)
+		l.nextRune()
 	}
-	return l.input[position:l.cursor]
+	return raw.String()
 }
 
 func (l *Lexer) readString() string {
-	l.nextChar() // 消耗引号
-	start := l.cursor
-	for c := l.peekChar(); c != '"' && c != 0; c = l.peekChar() {
-		l.nextChar()
+	l.nextRune() // 消耗引号
+	raw := new(strings.Builder)
+	for c := l.peekRune(); c != '"' && c != 0; c = l.peekRune() {
+		raw.WriteRune(c)
+		l.nextRune()
 	}
-	val := l.input[start:l.cursor]
-	l.nextChar() // 消耗引号
-	return val
+	l.nextRune() // 消耗引号
+	return raw.String()
 }
 
 // readIdentifier()函数顾名思义，就是读入一个标识符并前移词法分析器的扫描位置，直到遇见非字母字符。
 func (l *Lexer) readIdentifier() string {
-	position := l.cursor
-	for c := l.peekChar(); isIdentifier(c); c = l.peekChar() {
-		l.nextChar()
+	raw := new(strings.Builder)
+	for c := l.peekRune(); isIdentifier(c); c = l.peekRune() {
+		raw.WriteRune(c)
+		l.nextRune()
 	}
-	return l.input[position:l.cursor]
+	return raw.String()
 }
 
 func (l *Lexer) skipWhitespace() {
-	for c := l.peekChar(); c == ' ' || c == '\t' || c == '\n' || c == '\r'; c = l.peekChar() {
-		l.nextChar()
+	for c := l.peekRune(); c == ' ' || c == '\t' || c == '\n' || c == '\r'; c = l.peekRune() {
+		l.nextRune()
 	}
 }
 
 func NewLexer(input string) *Lexer {
 	l := &Lexer{
-		pos:   MakePosition(nil, 1, 1), // 初始位置，第一行第一个字符
-		input: input,
+		pos:  MakePosition(nil, 1, 1), // 初始位置，第一行第一个字符
+		rest: input,
 	}
-	// 读入第一个字符
-	// l.readChar()
 	return l
 }
 

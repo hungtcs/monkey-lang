@@ -131,7 +131,7 @@ func Eval(node syntax.Node, env *Env) (_ Value, err error) {
 }
 
 func evalProgram(program *syntax.Program, env *Env) (_ Value, err error) {
-	var value Value
+	var value Value = Null
 	for _, stmt := range program.Stmts {
 		value, err = Eval(stmt, env)
 		if err != nil {
